@@ -34,7 +34,7 @@ P02_firmware_bin_file_check() {
     export FIRMWARE_PATH="${LOG_DIR}"/firmware/
   fi
 
-  if [[ -f "${FIRMWARE_PATH}" ]]; then
+  if [[ -f "${FIRMWARE_PATH}" ]] && [[ "${SBOM_MINIMAL:-0}" -ne 1 ]]; then
     get_fw_file_details "${FIRMWARE_PATH}"
     generate_entropy_graph "${FIRMWARE_PATH}"
   fi
@@ -46,8 +46,10 @@ P02_firmware_bin_file_check() {
   print_output "[*] Details of the firmware file:"
   print_output "$(indent "${lFILE_LS_OUT}")"
   if [[ -f "${FIRMWARE_PATH}" ]]; then
-    print_fw_file_details "${FIRMWARE_PATH}"
-    generate_pixde "${FIRMWARE_PATH}"
+    if [[ "${SBOM_MINIMAL:-0}" -ne 1 ]]; then
+      print_fw_file_details "${FIRMWARE_PATH}"
+      generate_pixde "${FIRMWARE_PATH}"
+    fi
     fw_bin_detector "${FIRMWARE_PATH}"
     backup_p02_vars
   fi
@@ -151,6 +153,8 @@ generate_entropy_graph() {
 
 fw_bin_detector() {
   local lCHECK_FILE="${1:-}"
+  local lCHECK_FILE_NAME=""
+  lCHECK_FILE_NAME="$(basename "${lCHECK_FILE}")"
   local lFILE_BIN_OUT=""
   local lHEX_FIRST_LINE=""
   local lQNAP_ENC_CHECK=""
@@ -163,24 +167,29 @@ fw_bin_detector() {
 
   set_p02_default_exports
 
+  strings "${lCHECK_FILE}" > "${LOG_PATH_MODULE}/strings_${lCHECK_FILE_NAME}.txt" &
+  local lTMP_PID="$!"
   lFILE_BIN_OUT=$(file "${lCHECK_FILE}")
   lHEX_FIRST_LINE=$(hexdump -C "${lCHECK_FILE}" | head -1 || true)
-  lAVM_CHECK=$(strings "${lCHECK_FILE}" | grep -c "AVM GmbH .*. All rights reserved.\|(C) Copyright .* AVM" || true)
-  lBMC_CHECK=$(strings "${lCHECK_FILE}" | grep -c "libipmi.so" || true)
-  lDJI_PRAK_ENC_CHECK=$(strings "${lCHECK_FILE}" | grep -c "PRAK\|RREK\|IAEK\|PUEK" || true)
-  lDJI_XV4_ENC_CHECK=$(grep -boUaP "\x78\x56\x34" "${lCHECK_FILE}" | grep -c "^0:"|| true)
-  # we are running binwalk on the file to analyze the output afterwards:
-  "${BINWALK_BIN[@]}" "${lCHECK_FILE}" > "${TMP_DIR}"/p02_binwalk_output.txt
-  if [[ -f "${TMP_DIR}"/p02_binwalk_output.txt ]]; then
-    lQNAP_ENC_CHECK=$(grep -a -i "qnap encrypted" "${TMP_DIR}"/p02_binwalk_output.txt || true)
-  else
-    lQNAP_ENC_CHECK=$("${BINWALK_BIN[@]}" -y "qnap encrypted" "${lCHECK_FILE}")
-  fi
+  wait_for_pid "${lTMP_PID}"
+  lAVM_CHECK=$(grep -c "AVM GmbH .*. All rights reserved.\|(C) Copyright .* AVM" "${LOG_PATH_MODULE}/strings_${lCHECK_FILE_NAME}.txt" || true)
+  lBMC_CHECK=$(grep -c "libipmi.so" "${LOG_PATH_MODULE}/strings_${lCHECK_FILE_NAME}.txt" || true)
+  if [[ "${SBOM_MINIMAL:-0}" -ne 1 ]]; then
+    lDJI_PRAK_ENC_CHECK=$(grep -c "PRAK\|RREK\|IAEK\|PUEK" "${LOG_PATH_MODULE}/strings_${lCHECK_FILE_NAME}.txt" || true)
+    lDJI_XV4_ENC_CHECK=$(grep -boUaP "\x78\x56\x34" "${lCHECK_FILE}" | grep -c "^0:"|| true)
+    # we are running binwalk on the file to analyze the output afterwards:
+    "${BINWALK_BIN[@]}" "${lCHECK_FILE}" > "${TMP_DIR}"/p02_binwalk_output.txt
+    if [[ -f "${TMP_DIR}"/p02_binwalk_output.txt ]]; then
+      lQNAP_ENC_CHECK=$(grep -a -i "qnap encrypted" "${TMP_DIR}"/p02_binwalk_output.txt || true)
+    else
+      lQNAP_ENC_CHECK=$("${BINWALK_BIN[@]}" -y "qnap encrypted" "${lCHECK_FILE}")
+    fi
 
-  # the following check is very weak. It should be only an indicator if the firmware could be a UEFI/BIOS firmware
-  # further checks will follow in P35
-  lUEFI_CHECK=$(grep -c "UEFI\|BIOS" "${TMP_DIR}"/p02_binwalk_output.txt || true)
-  lUEFI_CHECK=$(( "${lUEFI_CHECK}" + "$(grep -c "UEFI\|BIOS" "${lCHECK_FILE}" || true)" ))
+    # the following check is very weak. It should be only an indicator if the firmware could be a UEFI/BIOS firmware
+    # further checks will follow in P35
+    lUEFI_CHECK=$(grep -c "UEFI\|BIOS" "${TMP_DIR}"/p02_binwalk_output.txt || true)
+    lUEFI_CHECK=$(( "${lUEFI_CHECK}" + "$(grep -c "UEFI\|BIOS" "${LOG_PATH_MODULE}/strings_${lCHECK_FILE_NAME}.txt" || true)" ))
+  fi
 
   if [[ -f "${KERNEL_CONFIG}" ]] && [[ "${KERNEL}" -eq 1 ]]; then
     # we set the FIRMWARE_PATH to the kernel config path if we have only -k parameter
@@ -320,43 +329,44 @@ fw_bin_detector() {
   if [[ "${lFILE_BIN_OUT}" == *"Perl script text executable"* ]]; then
     print_output "[+] Identified Perl script - performing perl checks"
     export DISABLE_DEEP=1
-    if ! [[ -f "${LOG_DIR}/firmware/$(basename "${lCHECK_FILE}").pl" ]]; then
-      cp "${lCHECK_FILE}" "${LOG_DIR}/firmware/$(basename "${lCHECK_FILE}").pl" || print_error "[-] Perl script file copy process failed"
+    if ! [[ -f "${LOG_DIR}/firmware/${lCHECK_FILE_NAME}.pl" ]]; then
+      cp "${lCHECK_FILE}" "${LOG_DIR}/firmware/${lCHECK_FILE_NAME}.pl" || print_error "[-] Perl script file copy process failed"
     fi
   fi
   if [[ "${lFILE_BIN_OUT}" == *"PHP script,"* ]]; then
     print_output "[+] Identified PHP script - performing PHP checks"
     export DISABLE_DEEP=1
-    if ! [[ -f "${LOG_DIR}/firmware/$(basename "${lCHECK_FILE}").php" ]]; then
-      cp "${lCHECK_FILE}" "${LOG_DIR}/firmware/$(basename "${lCHECK_FILE}").php" || print_error "[-] PHP script file copy process failed"
+    if ! [[ -f "${LOG_DIR}/firmware/${lCHECK_FILE_NAME}.php" ]]; then
+      cp "${lCHECK_FILE}" "${LOG_DIR}/firmware/${lCHECK_FILE_NAME}.php" || print_error "[-] PHP script file copy process failed"
     fi
   fi
   if [[ "${lFILE_BIN_OUT}" == *"Python script,"* ]]; then
     print_output "[+] Identified Python script - performing Python checks"
     export DISABLE_DEEP=1
-    if ! [[ -f "${LOG_DIR}/firmware/$(basename "${lCHECK_FILE}").py" ]]; then
-      cp "${lCHECK_FILE}" "${LOG_DIR}/firmware/$(basename "${lCHECK_FILE}").py" || print_error "[-] Python script file copy process failed"
+    if ! [[ -f "${LOG_DIR}/firmware/${lCHECK_FILE_NAME}.py" ]]; then
+      cp "${lCHECK_FILE}" "${LOG_DIR}/firmware/${lCHECK_FILE_NAME}.py" || print_error "[-] Python script file copy process failed"
     fi
   fi
   if [[ "${lFILE_BIN_OUT}" == *"shell script,"* ]]; then
     print_output "[+] Identified shell script - performing shell checks"
     export DISABLE_DEEP=1
-    if ! [[ -f "${LOG_DIR}/firmware/$(basename "${lCHECK_FILE}").sh" ]]; then
-      cp "${lCHECK_FILE}" "${LOG_DIR}/firmware/$(basename "${lCHECK_FILE}").sh" || print_error "[-] Shell script file copy process failed"
+    if ! [[ -f "${LOG_DIR}/firmware/${lCHECK_FILE_NAME}.sh" ]]; then
+      cp "${lCHECK_FILE}" "${LOG_DIR}/firmware/${lCHECK_FILE_NAME}.sh" || print_error "[-] Shell script file copy process failed"
     fi
   fi
   if [[ "${lFILE_BIN_OUT}" == *"Android package (APK),"* ]]; then
     print_output "[+] Identified Android APK package - performing APK checks"
-    if ! [[ -f "${LOG_DIR}/firmware/$(basename "${lCHECK_FILE}").apk" ]]; then
-      cp "${lCHECK_FILE}" "${LOG_DIR}/firmware/$(basename "${lCHECK_FILE}").apk" || print_error "[-] APK file copy process failed"
+    if ! [[ -f "${LOG_DIR}/firmware/${lCHECK_FILE_NAME}.apk" ]]; then
+      cp "${lCHECK_FILE}" "${LOG_DIR}/firmware/${lCHECK_FILE_NAME}.apk" || print_error "[-] APK file copy process failed"
+      export DISABLE_DEEP=1
     fi
   fi
   if [[ "${lFILE_BIN_OUT}" == *"PE32 executable"* ]] || [[ "${lFILE_BIN_OUT}" == *"PE32+ executable"* ]] || [[ "${lFILE_BIN_OUT}" == *"MSI Installer"* ]]; then
     print_output "[+] Identified Windows executable"
     export DISABLE_DEEP=1
     export WINDOWS_EXE=1
-    if ! [[ -f "${LOG_DIR}/firmware/$(basename "${lCHECK_FILE}").exe" ]]; then
-      cp "${lCHECK_FILE}" "${LOG_DIR}/firmware/$(basename "${lCHECK_FILE}").exe" || print_error "[-] Windows executable copy process failed"
+    if ! [[ -f "${LOG_DIR}/firmware/${lCHECK_FILE_NAME}.exe" ]]; then
+      cp "${lCHECK_FILE}" "${LOG_DIR}/firmware/${lCHECK_FILE_NAME}.exe" || print_error "[-] Windows executable copy process failed"
     fi
   fi
   # probably we need to take a deeper look to identify the gpg compressed firmware files better.
@@ -388,7 +398,7 @@ fw_bin_detector() {
     export BUFFALO_ENC_DETECTED=1
     write_csv_log "Buffalo encrypted" "yes" "NA"
   fi
-  if [[ "$(basename "${lCHECK_FILE}")" =~ .*\.ri ]] && [[ "${lFILE_BIN_OUT}" == *"data"* ]]; then
+  if [[ "${lCHECK_FILE_NAME}" =~ .*\.ri ]] && [[ "${lFILE_BIN_OUT}" == *"data"* ]]; then
     # ri files are usually used by zyxel
     if [[ $(find "${LOG_DIR}"/firmware -name "$(basename -s .ri "${lCHECK_FILE}")".bin | wc -l) -gt 0 ]]; then
       # if we find a bin file with the same name then it is a Zyxel firmware image

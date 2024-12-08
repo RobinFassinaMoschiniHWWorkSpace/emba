@@ -42,16 +42,16 @@ S25_kernel_check()
   if [[ ${#KERNEL_VERSION[@]} -ne 0 ]] ; then
     write_csv_log "BINARY" "VERSION" "CVE identifier" "CVSS rating" "exploit db exploit available" "metasploit module" "trickest PoC" "Routersploit" "local exploit" "remote exploit" "DoS exploit" "known exploited vuln"
     print_output "Kernel version:"
-    local LINE=""
-    for LINE in "${KERNEL_VERSION[@]}" ; do
-      print_output "$(indent "${ORANGE}${LINE}${NC}")"
+    local lENTRY=""
+    for lENTRY in "${KERNEL_VERSION[@]}" ; do
+      print_output "$(indent "${ORANGE}${lENTRY}${NC}")"
       lFOUND=1
     done
     if [[ ${#KERNEL_DESC[@]} -ne 0 ]] ; then
       print_ln
       print_output "Kernel details:"
-      for LINE in "${KERNEL_DESC[@]}" ; do
-        print_output "$(indent "${LINE}")"
+      for lENTRY in "${KERNEL_DESC[@]}" ; do
+        print_output "$(indent "${lENTRY}")"
         lFOUND=1
       done
     fi
@@ -63,7 +63,7 @@ S25_kernel_check()
     print_output "[-] No kernel version identified"
   fi
 
-  if [[ "${KERNEL}" -eq 1 ]] && [[ -f "${KERNEL_CONFIG}" ]] && [[ "${SBOM_MINIMAL}" -eq 0 ]]; then
+  if [[ "${KERNEL}" -eq 1 ]] && [[ -f "${KERNEL_CONFIG}" ]] && [[ "${SBOM_MINIMAL:-0}" -eq 0 ]]; then
     # we use check_kconfig from s24 module
     check_kconfig "${KERNEL_CONFIG}"
     lFOUND=1
@@ -77,8 +77,9 @@ S25_kernel_check()
   fi
 
   if [[ ${#KERNEL_VERSION[@]} -ne 0 ]] ; then
-    for K_VERS in "${KERNEL_VERSION[@]}" ; do
-      write_log "[*] Statistics:${K_VERS}"
+    local lK_VERS=""
+    for lK_VERS in "${KERNEL_VERSION[@]}" ; do
+      write_log "[*] Statistics:${lK_VERS}"
     done
   fi
   write_log "[*] Statistics1:${#KERNEL_MODULES[@]}:${KMOD_BAD}"
@@ -94,10 +95,13 @@ populate_karrays() {
   local lV=""
   local lK_MOD_FILE=""
 
-  mapfile -t KERNEL_MODULES < <( find "${FIRMWARE_PATH}" "${EXCL_FIND[@]}" -xdev \( -iname "*.ko" -o -iname "*.o" \) -type f -exec md5sum {} \; 2>/dev/null | sort -u -k1,1 | cut -d\  -f3 )
+  mapfile -t KERNEL_MODULES < <( find "${FIRMWARE_PATH}" "${EXCL_FIND[@]}" -xdev \( -iname "*.ko" -o -iname "*.o" \) -type f  -print0|xargs -r -0 -P 16 -I % sh -c 'md5sum %' 2>/dev/null | sort -u -k1,1 | cut -d\  -f3 )
 
   for lK_MODULE in "${KERNEL_MODULES[@]}"; do
-    lK_MOD_FILE=$(file "${lK_MODULE}")
+    lK_MOD_FILE=$(file -b "${lK_MODULE}")
+
+    # What is the old .o kernel modules showing in the file output?
+    # Linux v2.4.x and before is using .o kernel modules
     if [[ "${lK_MODULE}" =~ .*\.o ]]; then
       KERNEL_VERSION+=( "$(strings "${lK_MODULE}" 2>/dev/null | grep "kernel_version=" | cut -d= -f2 || true)" )
       continue
@@ -261,6 +265,9 @@ analyze_kernel_module() {
 
   print_output "[*] Found ${ORANGE}${#KERNEL_MODULES[@]}${NC} potential kernel modules."
 
+  local lOS_IDENTIFIED=""
+  lOS_IDENTIFIED=$(distri_check)
+
   for lKMODULE in "${KERNEL_MODULES[@]}" ; do
     lFILE_KMOD=$(file "${lKMODULE}")
     if [[ "${lFILE_KMOD}" != *"ELF"* ]]; then
@@ -268,12 +275,12 @@ analyze_kernel_module() {
     fi
     # modinfos can run in parallel:
     if [[ "${THREADED}" -eq 1 ]]; then
-      module_analyzer "${lKMODULE}" &
-      local TMP_PID="$!"
-      store_kill_pids "${TMP_PID}"
-      lWAIT_PIDS_S25_ARR+=( "${TMP_PID}" )
+      module_analyzer "${lKMODULE}" "${lOS_IDENTIFIED}" &
+      local lTMP_PID="$!"
+      store_kill_pids "${lTMP_PID}"
+      lWAIT_PIDS_S25_ARR+=( "${lTMP_PID}" )
     else
-      module_analyzer "${lKMODULE}"
+      module_analyzer "${lKMODULE}" "${lOS_IDENTIFIED}"
     fi
   done
 
@@ -287,6 +294,7 @@ analyze_kernel_module() {
 
 module_analyzer() {
   local lKMODULE="${1:-}"
+  local lOS_IDENTIFIED="${2:-}"
 
   if [[ "${lKMODULE}" == *".ko" ]]; then
     local lLICENSE=""
@@ -298,6 +306,12 @@ module_analyzer() {
     local lK_AUTHOR="NA"
     local lK_INTREE="NA"
     local lK_DESC="NA"
+    local lCPE_IDENTIFIER=""
+    local lPURL_IDENTIFIER=""
+    local lMOD_VERSION=""
+    local lAPP_NAME=""
+    local lK_FILE_OUT=""
+    local lAPP_TYPE="operating-system"
 
     lLICENSE=$(modinfo "${lKMODULE}" | grep "^license:" || true)
     lLICENSE=${lLICENSE/license:\ }
@@ -335,8 +349,8 @@ module_analyzer() {
     lSHA512_CHECKSUM="$(sha512sum "${lKMODULE}" | awk '{print $1}')"
 
     lK_FILE_OUT=$(file -b "${lKMODULE}" 2>/dev/null)
-    lK_ARCH=$(echo "${lK_ARCH}" | cut -d ',' -f2-3)
-    lK_ARCH=${lK_ARCH//,\ /\ -\ }
+    lK_ARCH=$(echo "${lK_FILE_OUT}" | cut -d ',' -f2)
+    lK_ARCH=${lK_ARCH#\ }
 
     if [[ "${lK_FILE_OUT}" == *"not stripped"* ]]; then
       if [[ "${lLICENSE}" == *"GPL"* || "${lLICENSE}" == *"BSD"* ]] ; then
@@ -357,16 +371,59 @@ module_analyzer() {
     # we store the kernel version (lVERSION:-NA) and the kernel module version (lMOD_VERSION:-NA)
     check_for_s08_csv_log "${S08_CSV_LOG}"
 
-    write_log "kernel_module;${lKMODULE:-NA};${lMD5_CHECKSUM:-NA}/${lSHA256_CHECKSUM:-NA}/${lSHA512_CHECKSUM:-NA};${lAPP_NAME};${lMOD_VERSION:-NA};NA;${lLICENSE};${lK_AUTHOR};${lK_ARCH};CPE not available;PURL not available;Linux kernel module - ${lAPP_NAME} - description: ${lK_DESC:-NA}" "${S08_CSV_LOG}"
+    local lPACKAGING_SYSTEM="kernel_module"
+    # add source file path information to our properties array:
+    local lPROP_ARRAY_INIT_ARR=()
+    lPROP_ARRAY_INIT_ARR+=( "source_path:${lKMODULE}" )
+    lPROP_ARRAY_INIT_ARR+=( "source_arch:${lK_ARCH}" )
+    lPROP_ARRAY_INIT_ARR+=( "source_details:${lK_FILE_OUT}" )
+    lPROP_ARRAY_INIT_ARR+=( "confidence:high" )
 
-    # ensure we do not log the kernel multiple times
-    if ! grep -q "linux_kernel;.*;${lK_VERSION,,};:linux:linux_kernel:${KV_ARR[*]};GPL-2.0-only" "${S08_CSV_LOG}";then
-      lCPE_IDENTIFIER="cpe:${CPE_VERSION}:a:linux:linux_kernel:${KV_ARR[*]}:*:*:*:*:*:*"
-      lPURL_IDENTIFIER=$(build_generic_purl ":linux:linux_kernel:${KV_ARR[*]}")
-      write_log "linux_kernel;${lKMODULE:-NA};${lMD5_CHECKSUM:-NA}/${lSHA256_CHECKSUM:-NA}/${lSHA512_CHECKSUM:-NA};linux_kernel:${lAPP_NAME};${lK_VERSION,,};:linux:linux_kernel:${KV_ARR[*]};GPL-2.0-only;kernel.org;${lK_ARCH};${lCPE_IDENTIFIER};${lPURL_IDENTIFIER};Detected via Linux kernel module - ${lAPP_NAME}" "${S08_CSV_LOG}"
+    build_sbom_json_properties_arr "${lPROP_ARRAY_INIT_ARR[@]}"
+
+    # build_json_hashes_arr sets lHASHES_ARR globally and we unset it afterwards
+    # final array with all hash values
+    if ! build_sbom_json_hashes_arr "${lKMODULE}" "${lAPP_NAME:-NA}" "${lAPP_VERS:-NA}" "${lPACKAGING_SYSTEM:-NA}"; then
+      print_output "[*] Already found results for ${lAPP_NAME} / ${lAPP_VERS}" "no_log"
+    else
+      # create component entry - this allows adding entries very flexible:
+      build_sbom_json_component_arr "${lPACKAGING_SYSTEM}" "${lAPP_TYPE:-library}" "${lAPP_NAME:-NA}" "${lMOD_VERSION:-NA}" "${lK_AUTHOR:-NA}" "${lLICENSE:-NA}" "${lCPE_IDENTIFIER:-NA}" "${lPURL_IDENTIFIER:-NA}" "${lK_DESC:-NA}"
     fi
 
-  elif [[ "${lKMODULE}" == *".o" ]]; then
+    write_log "${lPACKAGING_SYSTEM};${lKMODULE:-NA};${lMD5_CHECKSUM:-NA}/${lSHA256_CHECKSUM:-NA}/${lSHA512_CHECKSUM:-NA};${lAPP_NAME};${lMOD_VERSION:-NA};NA;${lLICENSE};${lK_AUTHOR};${lK_ARCH};CPE not available;PURL not available;${SBOM_COMP_BOM_REF:-NA};Linux kernel module - ${lAPP_NAME} - description: ${lK_DESC:-NA}" "${S08_CSV_LOG}"
+
+    # ensure we do not log the kernel multiple times
+    if ! grep -q "linux_kernel;.*;:linux:linux_kernel:${KV_ARR[*]};" "${S08_CSV_LOG}";then
+      local lPACKAGING_SYSTEM="linux_kernel+module"
+      local lK_AUTHOR="linux"
+      local lLICENSE="GPL-2.0-only"
+
+      lCPE_IDENTIFIER="cpe:${CPE_VERSION}:a:linux:linux_kernel:${KV_ARR[*]}:*:*:*:*:*:*"
+      lPURL_IDENTIFIER=$(build_generic_purl ":linux:linux_kernel:${KV_ARR[*]}" "${lOS_IDENTIFIED}" "${lK_ARCH:-NA}")
+
+      local lPACKAGING_SYSTEM="linux_kernel"
+      # add source file path information to our properties array:
+      local lPROP_ARRAY_INIT_ARR=()
+      lPROP_ARRAY_INIT_ARR+=( "source_path:${lKMODULE}" )
+      lPROP_ARRAY_INIT_ARR+=( "source_arch:${lK_ARCH}" )
+      lPROP_ARRAY_INIT_ARR+=( "source_details:${lK_FILE_OUT}" )
+      lPROP_ARRAY_INIT_ARR+=( "confidence:high" )
+
+      build_sbom_json_properties_arr "${lPROP_ARRAY_INIT_ARR[@]}"
+
+      # build_json_hashes_arr sets lHASHES_ARR globally and we unset it afterwards
+      # final array with all hash values
+      if ! build_sbom_json_hashes_arr "${lKMODULE}" "${lAPP_NAME:-NA}" "${lAPP_VERS:-NA}" "${lPACKAGING_SYSTEM:-NA}"; then
+        print_output "[*] Already found results for ${lAPP_NAME} / ${lAPP_VERS}" "no_log"
+      else
+        # create component entry - this allows adding entries very flexible:
+        build_sbom_json_component_arr "${lPACKAGING_SYSTEM}" "${lAPP_TYPE:-library}" "${lAPP_NAME:-NA}" "${lK_VERSION,,}" "${lK_AUTHOR:-NA}" "${lLICENSE:-NA}" "${lCPE_IDENTIFIER:-NA}" "${lPURL_IDENTIFIER:-NA}" "${lK_DESC:-NA}"
+      fi
+
+      write_log "${lPACKAGING_SYSTEM};${lKMODULE:-NA};${lMD5_CHECKSUM:-NA}/${lSHA256_CHECKSUM:-NA}/${lSHA512_CHECKSUM:-NA};linux_kernel:${lAPP_NAME};${lK_VERSION,,};:linux:linux_kernel:${KV_ARR[*]};GPL-2.0-only;kernel.org;${lK_ARCH};${lCPE_IDENTIFIER};${lPURL_IDENTIFIER};${SBOM_COMP_BOM_REF:-NA};Detected via Linux kernel module - ${lAPP_NAME}" "${S08_CSV_LOG}"
+    fi
+
+  elif [[ "${lKMODULE}" == *".o" ]] && [[ "${SBOM_MINIMAL:-0}" -ne 1 ]]; then
     print_output "[-] No support for .o kernel modules - ${ORANGE}${lKMODULE}${NC}" "no_log"
   fi
 }
@@ -382,12 +439,12 @@ check_modprobe() {
   local lMP_F_CHECK=0
   local lMP_CONF=""
 
-  readarray -t lMODPROBE_D_DIRS_ARR < <( find "${FIRMWARE_PATH}" -xdev "${EXCL_FIND[@]}" -iname '*modprobe.d*' -exec md5sum {} \; 2>/dev/null | sort -u -k1,1 | cut -d\  -f3 )
+  readarray -t lMODPROBE_D_DIRS_ARR < <( find "${FIRMWARE_PATH}" -xdev "${EXCL_FIND[@]}" -iname '*modprobe.d*'  -print0|xargs -r -0 -P 16 -I % sh -c 'md5sum % 2>/dev/null || true' | sort -u -k1,1 | cut -d\  -f3 )
   for lMPROBE_DIR in "${lMODPROBE_D_DIRS_ARR[@]}"; do
     if [[ -d "${lMPROBE_DIR}" ]] ; then
       lMP_CHECK=1
       print_output "[+] Found ""$(print_path "${lMPROBE_DIR}")"
-      readarray -t MODPROBE_D_DIR_CONTENT <<< "$( find "${lMPROBE_DIR}" -xdev -iname '*.conf' -exec md5sum {} \; 2>/dev/null | sort -u -k1,1 | cut -d\  -f3 )"
+      readarray -t MODPROBE_D_DIR_CONTENT <<< "$( find "${lMPROBE_DIR}" -xdev -iname '*.conf'  -print0|xargs -r -0 -P 16 -I % sh -c 'md5sum % 2>/dev/null || true' | sort -u -k1,1 | cut -d\  -f3 )"
       for lMP_CONF in "${MODPROBE_D_DIR_CONTENT[@]}"; do
         if [[ -e "${lMP_CONF}" ]] ; then
           lMP_F_CHECK=1

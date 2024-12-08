@@ -238,7 +238,7 @@ if [[ "${IN_DOCKER}" -eq 0 ]]; then
   fi
 
   FREE_SPACE=$(df --output=avail "${DDISK}" | awk 'NR==2')
-  if [[ "${FREE_SPACE}" -lt 18000000 ]]; then
+  if [[ "${FREE_SPACE}" -lt 19000000 ]]; then
     echo -e "\\n""${ORANGE}""EMBA installation in default mode needs a minimum of 18Gig for the docker image""${NC}"
     echo -e "\\n""${ORANGE}""Please free enough space on /var/lib/docker""${NC}"
     echo -e "\\n""${ORANGE}""Please check the documentation https://github.com/e-m-b-a/emba/wiki/Installation#prerequisites""${NC}"
@@ -293,7 +293,7 @@ if ! command -v docker > /dev/null || ! command -v docker compose > /dev/null ; 
   # Add Docker's official GPG key:
   apt-get install -y ca-certificates curl gnupg
   install -m 0755 -d /etc/apt/keyrings
-  curl -fsSL https://download.docker.com/linux/${OS}/gpg -o /etc/apt/keyrings/docker.asc
+  curl -fsSL https://download.docker.com/linux/"${OS}"/gpg -o /etc/apt/keyrings/docker.asc
   chmod a+r /etc/apt/keyrings/docker.asc
   # Add the repository to Apt sources:
   if [[ "${UBUNTU_OS}" -eq 1 ]]; then

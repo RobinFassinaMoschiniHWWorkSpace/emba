@@ -140,7 +140,7 @@ dji_imah_firmware_extractor() {
 
     # extract the encryption key from file:
     # for header details see table 2 from https://arxiv.org/ftp/arxiv/papers/2312/2312.16818.pdf
-    print_output "[*] Extract key identifier from firmware file ${ORANGE}$(basename "${lDJI_FILE}")${NC}"
+    print_output "[*] Extract key identifier from firmware file ${ORANGE}${lFNAME}${NC}"
     print_ln
     dd if="${lDJI_FILE}" of="${TMP_DIR}"/dji_enc_key.tmp skip=44 count=4 bs=1
     if [[ -f "${TMP_DIR}"/dji_enc_key.tmp ]] && [[ -s "${TMP_DIR}"/dji_enc_key.tmp ]]; then
@@ -219,7 +219,7 @@ dji_imah_firmware_extractor() {
           print_ln
           local lOUTPUT_DIR_UNBLOB="${lFILE_EXT_KEY}"_unblob
           unblobber "${lFILE_EXT_KEY}" "${lOUTPUT_DIR_UNBLOB}" 0
-          mapfile -t lUB_EXTRACTED_FILES_ARR < <(find "${lOUTPUT_DIR_UNBLOB}" -type f -exec file {} \;)
+          mapfile -t lUB_EXTRACTED_FILES_ARR < <(find "${lOUTPUT_DIR_UNBLOB}" -type f -print0|xargs -r -0 -P 16 -I % sh -c 'file %')
           if [[ "${#lUB_EXTRACTED_FILES_ARR[@]}" -gt 0 ]]; then
             sub_module_title "Extraction results of $(basename "${lFILE_EXT_KEY}")"
             print_output "[+] Extracted the following ${ORANGE}${#lUB_EXTRACTED_FILES_ARR[@]}${GREEN} files from ${ORANGE}${lFILE_EXT_KEY}${GREEN}:"

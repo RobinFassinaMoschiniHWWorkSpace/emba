@@ -132,7 +132,7 @@ S04_windows_basic_analysis() {
   if [[ "${WINDOWS_EXE:-0}" -eq 1 ]]; then
     # if we already know that we have a windows binary to analyze we can check every file with the file command
     # to ensure we do not miss anything
-    mapfile -t lEXE_ARCHIVES_ARR < <(find "${FIRMWARE_PATH}" "${EXCL_FIND[@]}" -xdev -type f -exec file {} \; | grep "PE32\|MSI" | cut -d ':' -f1)
+    mapfile -t lEXE_ARCHIVES_ARR < <(find "${FIRMWARE_PATH}" "${EXCL_FIND[@]}" -xdev -type f -print0|xargs -r -0 -P 16 -I % sh -c 'file % | grep "PE32\|MSI" | cut -d : -f1')
   else
     # if we just search through an unknwon environment we search for exe, dll and msi files
     mapfile -t lEXE_ARCHIVES_ARR < <(find "${FIRMWARE_PATH}" "${EXCL_FIND[@]}" -xdev -type f \( -name "*.exe" -o -name "*.dll" -o -name "*.msi" \))
@@ -142,26 +142,26 @@ S04_windows_basic_analysis() {
     for lEXE_ARCHIVE in "${lEXE_ARCHIVES_ARR[@]}" ; do
       lEXE_NAME=$(basename "${lEXE_ARCHIVE}")
 
-      sub_module_title "exifdata for ${lEXE_NAME}" "${LOG_PATH_MODULE}/exifdata_$(basename "${lEXE_ARCHIVE}").log"
+      sub_module_title "exifdata for ${lEXE_NAME}" "${LOG_PATH_MODULE}/exifdata_${lEXE_NAME}.log"
       print_output "[*] Extract exifdata from ${ORANGE}${lEXE_NAME}${NC}" "no_log"
-      exiftool "${lEXE_ARCHIVE}" 2>/dev/null >> "${LOG_PATH_MODULE}/exifdata_$(basename "${lEXE_ARCHIVE}").log" || print_error "[-] Something happened on exiftool analysis for ${lEXE_ARCHIVE}"
+      exiftool "${lEXE_ARCHIVE}" 2>/dev/null >> "${LOG_PATH_MODULE}/exifdata_${lEXE_NAME}.log" || print_error "[-] Something happened on exiftool analysis for ${lEXE_ARCHIVE}"
 
-      sub_module_title "PEdata for ${lEXE_NAME}" "${LOG_PATH_MODULE}/readpe_$(basename "${lEXE_ARCHIVE}").log"
+      sub_module_title "PEdata for ${lEXE_NAME}" "${LOG_PATH_MODULE}/readpe_${lEXE_NAME}.log"
       print_output "[*] Extract pedata from ${ORANGE}${lEXE_NAME}${NC}" "no_log"
-      write_log "" "${LOG_PATH_MODULE}/readpe_$(basename "${lEXE_ARCHIVE}").log"
-      write_log "[*] pescan for ${ORANGE}${lEXE_NAME}${NC}" "${LOG_PATH_MODULE}/readpe_$(basename "${lEXE_ARCHIVE}").log"
-      pescan -v "${lEXE_ARCHIVE}" 2>/dev/null >> "${LOG_PATH_MODULE}/readpe_$(basename "${lEXE_ARCHIVE}").log" || print_error "[-] Something happened on pescan analysis for ${lEXE_ARCHIVE}"
-      write_log "" "${LOG_PATH_MODULE}/readpe_$(basename "${lEXE_ARCHIVE}").log"
-      write_log "[*] readpe for ${ORANGE}${lEXE_NAME}${NC}" "${LOG_PATH_MODULE}/readpe_$(basename "${lEXE_ARCHIVE}").log"
-      readpe "${lEXE_ARCHIVE}" 2>/dev/null >> "${LOG_PATH_MODULE}/readpe_$(basename "${lEXE_ARCHIVE}").log" || print_error "[-] Something happened on pedata analysis for ${lEXE_ARCHIVE}"
+      write_log "" "${LOG_PATH_MODULE}/readpe_${lEXE_NAME}.log"
+      write_log "[*] pescan for ${ORANGE}${lEXE_NAME}${NC}" "${LOG_PATH_MODULE}/readpe_${lEXE_NAME}.log"
+      pescan -v "${lEXE_ARCHIVE}" 2>/dev/null >> "${LOG_PATH_MODULE}/readpe_${lEXE_NAME}.log" || print_error "[-] Something happened on pescan analysis for ${lEXE_ARCHIVE}"
+      write_log "" "${LOG_PATH_MODULE}/readpe_${lEXE_NAME}.log"
+      write_log "[*] readpe for ${ORANGE}${lEXE_NAME}${NC}" "${LOG_PATH_MODULE}/readpe_${lEXE_NAME}.log"
+      readpe "${lEXE_ARCHIVE}" 2>/dev/null >> "${LOG_PATH_MODULE}/readpe_${lEXE_NAME}.log" || print_error "[-] Something happened on pedata analysis for ${lEXE_ARCHIVE}"
 
-      if [[ -s "${LOG_PATH_MODULE}/exifdata_$(basename "${lEXE_ARCHIVE}").log" ]]; then
-        print_output "[*] Windows binary exifdata - $(orange "$(print_path "${lEXE_ARCHIVE}")")" "" "${LOG_PATH_MODULE}/exifdata_$(basename "${lEXE_ARCHIVE}").log"
+      if [[ -s "${LOG_PATH_MODULE}/exifdata_${lEXE_NAME}.log" ]]; then
+        print_output "[*] Windows binary exifdata - $(orange "$(print_path "${lEXE_ARCHIVE}")")" "" "${LOG_PATH_MODULE}/exifdata_${lEXE_NAME}.log"
       else
         print_output "[-] No exif data for binary $(orange "$(print_path "${lEXE_ARCHIVE}")") available"
       fi
-      if [[ -s "${LOG_PATH_MODULE}/readpe_$(basename "${lEXE_ARCHIVE}").log" ]]; then
-        print_output "[*] Windows binary pedata - $(orange "$(print_path "${lEXE_ARCHIVE}")")" "" "${LOG_PATH_MODULE}/readpe_$(basename "${lEXE_ARCHIVE}").log"
+      if [[ -s "${LOG_PATH_MODULE}/readpe_${lEXE_NAME}.log" ]]; then
+        print_output "[*] Windows binary pedata - $(orange "$(print_path "${lEXE_ARCHIVE}")")" "" "${LOG_PATH_MODULE}/readpe_${lEXE_NAME}.log"
       else
         print_output "[-] No pedata for binary $(orange "$(print_path "${lEXE_ARCHIVE}")") available"
       fi

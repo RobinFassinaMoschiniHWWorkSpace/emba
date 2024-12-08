@@ -31,6 +31,7 @@ set_defaults() {
   export BINARY_EXTENDED=0
   export CONTAINER_EXTRACT=0
   export DISABLE_DEEP=0
+  export DEEP_EXT_DEPTH=4
   export FACT_EXTRACTOR=0
   export FIRMWARE=0
   export FORCE=0
@@ -89,7 +90,7 @@ set_defaults() {
   export MINIMUM_GPT_PRIO=1     # everything above this value gets checked
 
   export SHORT_PATH=0           # short paths in cli output
-  export THREADED=0             # 0 -> single thread
+  export THREADED=1             # 0 -> single thread
                                 # 1 -> multi threaded
   export YARA=0                 # default: disable yara tests
   export OVERWRITE_LOG=0        # automaticially overwrite log directory, if necessary
@@ -153,9 +154,33 @@ set_defaults() {
   export QUEST_CONTAINER=""
   export DISABLE_DOTS=0     # set to 1 to disable dotting for showing EMBA is alive
   export CPE_VERSION="2.3"
+
+  # we limit the maximal file log of our SBOM -> change this in the scanning profile
+  export SBOM_MAX_FILE_LOG=200
+
+  # we can enable/disable the s08 submodules with the following array configuration
+  # -> just comment the submodule that should not be used
+  # usually this should be done via a scan-profile
+  export S08_MODULES_ARR=()
+  S08_MODULES_ARR=( "S08_submodule_debian_pkg_mgmt_parser" )
+  S08_MODULES_ARR+=( "S08_submodule_deb_package_parser" )
+  S08_MODULES_ARR+=( "S08_submodule_openwrt_pkg_mgmt_parser" )
+  S08_MODULES_ARR+=( "S08_submodule_rpm_pkg_mgmt_parser" )
+  S08_MODULES_ARR+=( "S08_submodule_rpm_package_parser" )
+  S08_MODULES_ARR+=( "S08_submodule_bsd_package_parser" )
+  S08_MODULES_ARR+=( "S08_submodule_python_pip_package_mgmt_parser" )
+  S08_MODULES_ARR+=( "S08_submodule_python_requirements_parser" )
+  S08_MODULES_ARR+=( "S08_submodule_python_poetry_lock_parser" )
+  S08_MODULES_ARR+=( "S08_submodule_java_archives_parser" )
+  S08_MODULES_ARR+=( "S08_submodule_ruby_gem_archive_parser" )
+  S08_MODULES_ARR+=( "S08_submodule_alpine_apk_package_parser" )
+  S08_MODULES_ARR+=( "S08_submodule_windows_exifparser" )
+  S08_MODULES_ARR+=( "S08_submodule_rust_cargo_lock_parser" )
+  S08_MODULES_ARR+=( "S08_submodule_node_js_package_lock_parser" )
 }
 
 set_log_paths() {
+  export SBOM_LOG_PATH="${LOG_DIR}/SBOM/"
   export P02_CSV_LOG="${CSV_DIR}/p02_firmware_bin_file_check.csv"
   export P99_CSV_LOG="${CSV_DIR}/p99_prepare_analyzer.csv"
   export P55_LOG="${LOG_DIR}/p55_unblob_extractor.txt"
