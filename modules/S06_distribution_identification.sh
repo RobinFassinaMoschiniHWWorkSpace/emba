@@ -26,10 +26,10 @@ S06_distribution_identification()
   local lOUTPUT=0
   local lPATTERN=""
   local lIDENTIFIER=""
-  local OUT1=""
-  local SED_COMMAND=""
-  local FILE_QUOTED=""
-  local CONFIG=""
+  local lOUT1=""
+  local lSED_COMMAND=""
+  local lFILE_QUOTED=""
+  local lCONFIG=""
   local lFILE=""
   local lSEARCH_FILE=""
   local lFOUND_FILES_ARR=()
@@ -40,12 +40,14 @@ S06_distribution_identification()
   local lCPE_IDENTIFIER="NA"
   local lPURL_IDENTIFIER="NA"
   local lCSV_RULE=""
+  local lPACKAGING_SYSTEM="static_distri_analysis"
+  local lOS_IDENTIFIED=""
 
   write_csv_log "file" "type" "identifier" "csv_rule"
 
-  while read -r CONFIG; do
-    if safe_echo "${CONFIG}" | grep -q "^[^#*/;]"; then
-      lSEARCH_FILE="$(safe_echo "${CONFIG}" | cut -d\; -f2)"
+  while read -r lCONFIG; do
+    if safe_echo "${lCONFIG}" | grep -q "^[^#*/;]"; then
+      lSEARCH_FILE="$(safe_echo "${lCONFIG}" | cut -d\; -f2)"
       # echo "lSEARCH_FILE: $lSEARCH_FILE"
       # echo "FIRMWARE_PATH: $FIRMWARE_PATH"
       if [[ "${lSEARCH_FILE}" == *"os-release"* ]] || [[ "${lSEARCH_FILE}" == *"lsb-release"* ]]; then
@@ -57,26 +59,27 @@ S06_distribution_identification()
           continue
         fi
       fi
-      mapfile -t lFOUND_FILES_ARR < <(find "${FIRMWARE_PATH}" -xdev -iwholename "*${lSEARCH_FILE}" || true)
+      # mapfile -t lFOUND_FILES_ARR < <(find "${FIRMWARE_PATH}" -xdev -iwholename "*${lSEARCH_FILE}" || true)
+      mapfile -t lFOUND_FILES_ARR < <(grep "${lSEARCH_FILE};" "${P99_CSV_LOG}" | cut -d ';' -f1 || true)
       for lFILE in "${lFOUND_FILES_ARR[@]}"; do
         # print_output "lFILE: ${lFILE}"
         if [[ -f "${lFILE}" ]]; then
-          lPATTERN="$(safe_echo "${CONFIG}" | cut -d\; -f3)"
-          # do not use safe_echo for SED_COMMAND
-          SED_COMMAND="$(echo "${CONFIG}" | cut -d\; -f4)"
-          FILE_QUOTED=$(escape_echo "${lFILE}")
-          OUT1="$(eval "${lPATTERN}" "${FILE_QUOTED}" || true)"
+          lPATTERN="$(safe_echo "${lCONFIG}" | cut -d\; -f3)"
+          # do not use safe_echo for lSED_COMMAND
+          lSED_COMMAND="$(echo "${lCONFIG}" | cut -d\; -f4)"
+          lFILE_QUOTED=$(escape_echo "${lFILE}")
+          lOUT1="$(eval "${lPATTERN}" "${lFILE_QUOTED}" || true)"
           # print_output "lPATTERN: ${lPATTERN}"
-          # print_output "SED command: ${SED_COMMAND}"
-          # print_output "FILE: ${FILE_QUOTED}"
-          # print_output "identified before: ${OUT1}"
-          OUT1=$(echo "${OUT1}" | sort -u | tr '\n' ' ')
-          OUT1=$(echo "${OUT1}" | tr -d '"')
-          # print_output "identified mod: ${OUT1}"
-          if [[ -n "${SED_COMMAND}" ]]; then
-            lIDENTIFIER=$(echo "${OUT1}" | eval "${SED_COMMAND}" | sed 's/  \+/ /g' | sed 's/ $//' || true)
+          # print_output "SED command: ${lSED_COMMAND}"
+          # print_output "FILE: ${lFILE_QUOTED}"
+          # print_output "identified before: ${lOUT1}"
+          lOUT1=$(echo "${lOUT1}" | sort -u | tr '\n' ' ')
+          lOUT1=$(echo "${lOUT1}" | tr -d '"')
+          # print_output "identified mod: ${lOUT1}"
+          if [[ -n "${lSED_COMMAND}" ]]; then
+            lIDENTIFIER=$(echo "${lOUT1}" | eval "${lSED_COMMAND}" | sed 's/  \+/ /g' | sed 's/ $//' || true)
           else
-            lIDENTIFIER=$(echo "${OUT1}" | sed 's/  \+/ /g' | sed 's/ $//' || true)
+            lIDENTIFIER=$(echo "${lOUT1}" | sed 's/  \+/ /g' | sed 's/ $//' || true)
           fi
           # print_output "[*] lIDENTIFIER: ${lIDENTIFIER}"
           lFILENAME=$(basename "${lFILE,,}")
@@ -98,8 +101,9 @@ S06_distribution_identification()
             lCSV_RULE=$(get_csv_rule_distri "${lIDENTIFIER}")
             write_csv_log "${lFILE}" "Linux" "${lIDENTIFIER}" "${lCSV_RULE}"
             lCPE_IDENTIFIER="cpe:${CPE_VERSION}${lCSV_RULE}:*:*:*:*:*:*"
-            lPURL_IDENTIFIER=$(build_generic_purl "${lCSV_RULE}")
-            write_log "static_distri_analysis;${lFILE:-NA};${lMD5_CHECKSUM:-NA}/${lSHA256_CHECKSUM:-NA}/${lSHA512_CHECKSUM:-NA};${lFILENAME};${lIDENTIFIER:-NA};${lCSV_RULE:-NA};${LIC:-NA};maintainer unknown;NA;${lCPE_IDENTIFIER};${lPURL_IDENTIFIER};Linux distribution identification module" "${S08_CSV_LOG}"
+            lOS_IDENTIFIED=$(distri_check)
+            lPURL_IDENTIFIER=$(build_generic_purl "${lCSV_RULE}" "${lOS_IDENTIFIED}" "${lBIN_ARCH:-NA}")
+            write_log "${lPACKAGING_SYSTEM};${lFILE:-NA};${lMD5_CHECKSUM:-NA}/${lSHA256_CHECKSUM:-NA}/${lSHA512_CHECKSUM:-NA};${lFILENAME};${lIDENTIFIER:-NA};${lCSV_RULE:-NA};${LIC:-NA};maintainer unknown;NA;${lCPE_IDENTIFIER};${lPURL_IDENTIFIER};Linux distribution identification module" "${S08_CSV_LOG}"
           fi
 
           # check if not zero and not only spaces
@@ -116,8 +120,44 @@ S06_distribution_identification()
             fi
             # lCSV_RULE has 5 fields and looks like the following: :dlink:device:version:*
             lCPE_IDENTIFIER="cpe:${CPE_VERSION}${lCSV_RULE}:*:*:*:*:*:*"
-            lPURL_IDENTIFIER=$(build_generic_purl "${lCSV_RULE}")
-            write_log "static_distri_analysis;${lFILE:-NA};${lMD5_CHECKSUM:-NA}/${lSHA256_CHECKSUM:-NA}/${lSHA512_CHECKSUM:-NA};${lFILENAME};${lIDENTIFIER:-NA};${lCSV_RULE:-NA};${LIC:-NA};maintainer unknown;NA;${lCPE_IDENTIFIER};${lPURL_IDENTIFIER};Linux distribution identification module" "${S08_CSV_LOG}"
+            lOS_IDENTIFIED=$(distri_check)
+            local lAPP_TYPE="operating-system"
+            local lAPP_LIC=""
+            local lAPP_MAINT=""
+            lAPP_MAINT=$(echo "${lCSV_RULE}" | cut -d ':' -f2)
+            local lAPP_NAME=""
+            lAPP_NAME=$(echo "${lCSV_RULE}" | cut -d ':' -f3)
+            local lAPP_VERS=""
+            lAPP_VERS=$(echo "${lCSV_RULE}" | cut -d ':' -f4-5)
+            # it could be that we have a version like 2.14b:* -> we remove the last field
+            lAPP_VERS="${lAPP_VERS/:\*}"
+            # we use the already (p99) identified architecture for the distri
+            local lAPP_ARCH="${ARCH:-NA}"
+            lPURL_IDENTIFIER=$(build_generic_purl "${lCSV_RULE}" "${lOS_IDENTIFIED}" "${lAPP_ARCH:-NA}")
+
+            # add source file path information to our properties array:
+            local lPROP_ARRAY_INIT_ARR=()
+            lPROP_ARRAY_INIT_ARR+=( "source_path:${lFILE}" )
+            if [[ "${lAPP_ARCH}" != "NA" ]]; then
+              lPROP_ARRAY_INIT_ARR+=( "source_arch:${lAPP_ARCH}" )
+            fi
+            lPROP_ARRAY_INIT_ARR+=( "identifer_detected:${lIDENTIFIER}" )
+            lPROP_ARRAY_INIT_ARR+=( "minimal_identifier:${lCSV_RULE}" )
+            lPROP_ARRAY_INIT_ARR+=( "confidence:medium" )
+
+            build_sbom_json_properties_arr "${lPROP_ARRAY_INIT_ARR[@]}"
+
+            # build_json_hashes_arr sets lHASHES_ARR globally and we unset it afterwards
+            # final array with all hash values
+            if ! build_sbom_json_hashes_arr "${lFILE}" "${lAPP_NAME:-NA}" "${lAPP_VERS:-NA}" "${lPACKAGING_SYSTEM:-NA}"; then
+              print_output "[*] Already found results for ${lAPP_NAME} / ${lAPP_VERS}" "no_log"
+              continue
+            fi
+
+            # create component entry - this allows adding entries very flexible:
+            build_sbom_json_component_arr "${lPACKAGING_SYSTEM}" "${lAPP_TYPE:-library}" "${lAPP_NAME:-NA}" "${lAPP_VERS:-NA}" "${lAPP_MAINT:-NA}" "${lAPP_LIC:-NA}" "${lCPE_IDENTIFIER:-NA}" "${lPURL_IDENTIFIER:-NA}" "${lAPP_DESC:-NA}"
+
+            write_log "${lPACKAGING_SYSTEM};${lFILE:-NA};${lMD5_CHECKSUM:-NA}/${lSHA256_CHECKSUM:-NA}/${lSHA512_CHECKSUM:-NA};${lFILENAME};${lIDENTIFIER:-NA};${lCSV_RULE:-NA};${lAPP_LIC:-NA};maintainer unknown;NA;${lCPE_IDENTIFIER};${lPURL_IDENTIFIER};${SBOM_COMP_BOM_REF};Linux distribution identification module" "${S08_CSV_LOG}"
             lOUTPUT=1
           fi
         fi
@@ -137,9 +177,10 @@ dlink_image_sign() {
   local lDLINK_BVER=""
   local lDLINK_FW_VER_tmp=""
 
-  mapfile -t lDLINK_BUILDVER_ARR < <(find "${FIRMWARE_PATH}" -xdev -path "*config/buildver")
+  # mapfile -t lDLINK_BUILDVER_ARR < <(find "${FIRMWARE_PATH}" -xdev -path "*config/buildver")
+  mapfile -t lDLINK_BUILDVER_ARR < <(grep "config/buildver;" "${P99_CSV_LOG}" | cut -d ';' -f1 | sort -u || true)
   for lDLINK_BVER in "${lDLINK_BUILDVER_ARR[@]}"; do
-    DLINK_FW_VER=$(grep -E "[0-9]+\.[0-9]+" "${lDLINK_BVER}")
+    DLINK_FW_VER=$(grep -E "[0-9]+\.[0-9]+" "${lDLINK_BVER/;*}" || true)
     if ! [[ "${DLINK_FW_VER}" =~ ^v.* ]]; then
       DLINK_FW_VER="v${DLINK_FW_VER}"
     fi
@@ -148,7 +189,8 @@ dlink_image_sign() {
 
   local lDLINK_BUILDREV_ARR=()
   # probably we can use this in the future. Currently there is no need for it:
-  mapfile -t lDLINK_BUILDREV_ARR < <(find "${FIRMWARE_PATH}" -xdev -path "*config/buildrev")
+  # mapfile -t lDLINK_BUILDREV_ARR < <(find "${FIRMWARE_PATH}" -xdev -path "*config/buildrev")
+  mapfile -t lDLINK_BUILDREV_ARR < <(grep "config/buildrev;" "${P99_CSV_LOG}" | cut -d ';' -f1 | sort -u || true)
   for lDLINK_BREV in "${lDLINK_BUILDREV_ARR[@]}"; do
     lDLINK_FW_VER_tmp=$(grep -E "^[A-Z][0-9]+" "${lDLINK_BREV}" || true)
     # -> B01
@@ -209,6 +251,14 @@ get_csv_rule_distri() {
   #   MikroTik routerOS V2.4 (c) 1999-2001       http://mikrotik.com/
   lVERSION_IDENTIFIER="$(safe_echo "${lVERSION_IDENTIFIER}" | sed -r 's/.*mikrotik\ routeros\ v([0-9]\.[0-9]+).*/:mikrotik:routeros:\1/')"
   lVERSION_IDENTIFIER="${lVERSION_IDENTIFIER// /:}"
+
+  # ensure we have filled all the fields
+  lRES="${lVERSION_IDENTIFIER//[^:]}"
+  while [[ "${#lRES}" -lt 3 ]]; do
+    lVERSION_IDENTIFIER=":${lVERSION_IDENTIFIER}"
+    lRES="${lVERSION_IDENTIFIER//[^:]}"
+  done
+
   lCSV_RULE="$(safe_echo "${lVERSION_IDENTIFIER}" | tr -dc '[:print:]')"
   echo "${lCSV_RULE}"
 }

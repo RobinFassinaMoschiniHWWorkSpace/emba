@@ -30,7 +30,7 @@ Author(s): Michael Messner, Pascal Eckmann, Benedikt Kühne
 # EMBA
 ## The security analyzer for firmware of embedded devices
 
-*EMBA* is designed as the central firmware analysis and SBOM tool for penetration testers, product security teams, developers and responsible product managers. It supports the complete security analysis process starting with *firmware extraction*, doing *static analysis* and *dynamic analysis* via emulation, building the SBOM and finally generating a web report. *EMBA* automatically discovers possible weak spots and vulnerabilities in firmware. Examples are insecure binaries, old and outdated software components, potentially vulnerable scripts, or hard-coded passwords. *EMBA* is a command line tool with the possibility to generate an easy-to-use web report for further analysis.
+*EMBA* is designed as the central firmware analysis and SBOM tool for penetration testers, product security teams, developers and responsible product managers. It supports the complete security analysis process starting with *firmware extraction*, doing *static analysis* and *dynamic analysis* via emulation, building the SBOM and finally generating a web based vulnerability report. *EMBA* automatically discovers possible weak spots and vulnerabilities in firmware. Examples are insecure binaries, old and outdated software components, potentially vulnerable scripts, or hard-coded passwords. *EMBA* is a command line tool with the possibility to generate an easy-to-use web report for further analysis.
 
 *EMBA* assists the penetration testers, product security teams and developers in the identification of weak spots and vulnerabilities in the firmware image. *EMBA* provides as much information as possible about the firmware, that the tester can decide on focus areas and is responsible for verifying and interpreting the results.
 
@@ -64,7 +64,7 @@ sudo ./emba -l ~/log -f ~/firmware -p ./scan-profiles/default-scan.emba
 ## Quick start with default SBOM profile:
 For further details on EMBA's SBOM capabilities check the [wiki](https://github.com/e-m-b-a/emba/wiki/SBOM-environment)
 ```console
-sudo ./emba -l ~/log -f ~/firmware -p ./scan-profiles/sbom-default.emba
+sudo ./emba -l ~/log -f ~/firmware -p ./scan-profiles/default-sbom.emba
 
 ```
 ## Quick start with system-emulation scan profile:
