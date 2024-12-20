@@ -106,8 +106,15 @@ check_live_nmap_basic() {
         fi
         lNMAP_CPE=${lNMAP_CPE/ /}
         lNMAP_CPE=${lNMAP_CPE//cpe:\/}
+        # remove h/o/b from start -> we need to start with :
+        lNMAP_CPE=${lNMAP_CPE#[hob]}
         # just to ensure there is some kind of version information in our entry
-        if [[ "${lNMAP_CPE}" =~ .*[0-9].* ]]; then
+        if [[ "$(echo "${lNMAP_CPE}" | tr ':' '\n' | wc -l)" -lt 4 ]]; then
+          # if the length does not match we can drop these results
+          print_output "[-] WARNING: Identifier ${lNMAP_CPE} is probably incorrect and will be removed" "no_log"
+          continue
+        fi
+        if [[ "${lNMAP_CPE}" =~ :.*[0-9].* ]]; then
           print_output "[*] CPE details detected: ${ORANGE}${lNMAP_CPE}${NC}"
           write_csv_log "---" "NA" "NA" "${lNMAP_CPE}" "NA" "${lTYPE}"
         fi
@@ -182,13 +189,6 @@ l15_version_detector() {
   print_output "[*] Testing detected service ${ORANGE}${lSERVICE}${NC}" "no_log"
 
   local lVERSION_IDENTIFIER_CFG="${CONFIG_DIR}"/bin_version_strings.cfg
-  if [[ "${QUICK_SCAN:-0}" -eq 1 ]] && [[ -f "${CONFIG_DIR}"/bin_version_strings_quick.cfg ]]; then
-    # the quick scan configuration has only entries that have known vulnerabilities in the CVE database
-    local lVERSION_IDENTIFIER_CFG="${CONFIG_DIR}"/bin_version_strings_quick.cfg
-    local lV_CNT=0
-    lV_CNT=$(wc -l "${CONFIG_DIR}"/bin_version_strings_quick.cfg)
-    print_output "[*] Quick scan enabled - ${lV_CNT/\ *} version identifiers loaded"
-  fi
 
   while read -r lVERSION_LINE; do
     if echo "${lVERSION_LINE}" | grep -v -q "^[^#*/;]"; then
