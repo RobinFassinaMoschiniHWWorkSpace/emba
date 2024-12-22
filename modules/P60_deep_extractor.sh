@@ -21,8 +21,6 @@ export PRE_THREAD_ENA=0
 
 P60_deep_extractor() {
   module_log_init "${FUNCNAME[0]}"
-  module_title "Binary firmware deep extractor"
-  pre_module_reporter "${FUNCNAME[0]}"
 
   export DISK_SPACE_CRIT=0
   local lFILES_EXT=0
@@ -39,6 +37,9 @@ P60_deep_extractor() {
     return
   fi
 
+  module_title "Binary firmware deep extractor"
+  pre_module_reporter "${FUNCNAME[0]}"
+
   check_disk_space
   if ! [[ "${DISK_SPACE}" -gt "${MAX_EXT_SPACE}" ]]; then
     deep_extractor
@@ -48,19 +49,24 @@ P60_deep_extractor() {
     DISK_SPACE_CRIT=1
   fi
 
-  sub_module_title "Extration results"
+  if [[ "${SBOM_MINIMAL:-0}" -eq 1 ]]; then
+    module_end_log "${FUNCNAME[0]}" 1
+    return
+  fi
 
+  sub_module_title "Extraction results"
+
+  lUNIQUE_FILES=$(find "${FIRMWARE_PATH_CP}" "${EXCL_FIND[@]}" -xdev -type f -print0|xargs -r -0 -P 16 -I % sh -c 'md5sum "%" || true' 2>/dev/null | sort -u -k1,1 | cut -d\  -f3 | wc -l )
+  # lBINS=$(find "${FIRMWARE_PATH_CP}" "${EXCL_FIND[@]}" -xdev -type f -print0|xargs -r -0 -P 16 -I % sh -c 'file "%" | grep -c "ELF"' || true)
   lFILES_EXT=$(find "${FIRMWARE_PATH_CP}" -xdev -type f | wc -l )
-  lUNIQUE_FILES=$(find "${FIRMWARE_PATH_CP}" "${EXCL_FIND[@]}" -xdev -type f -exec md5sum {} \; 2>/dev/null | sort -u -k1,1 | cut -d\  -f3 | wc -l )
-  lDIRS_EXT=$(find "${FIRMWARE_PATH_CP}" -xdev -type d | wc -l )
-  lBINS=$(find "${FIRMWARE_PATH_CP}" "${EXCL_FIND[@]}" -xdev -type f -exec file {} \; | grep -c "ELF" || true)
 
   if [[ "${lBINS}" -gt 0 || "${lUNIQUE_FILES}" -gt 0 ]]; then
+    lDIRS_EXT=$(find "${FIRMWARE_PATH_CP}" -xdev -type d | wc -l )
     export LINUX_PATH_COUNTER=0
     linux_basic_identification_helper "${FIRMWARE_PATH_CP}"
     print_ln
     print_output "[*] Found ${ORANGE}${lFILES_EXT}${NC} files (${ORANGE}${lUNIQUE_FILES}${NC} unique files) and ${ORANGE}${lDIRS_EXT}${NC} directories at all."
-    print_output "[*] Found ${ORANGE}${lBINS}${NC} binaries."
+    # print_output "[*] Found ${ORANGE}${lBINS}${NC} binaries."
     print_output "[*] Additionally the Linux path counter is ${ORANGE}${LINUX_PATH_COUNTER}${NC}."
 
     tree -csh "${FIRMWARE_PATH_CP}" | tee -a "${LOG_FILE}"
@@ -112,7 +118,7 @@ deep_extractor() {
   lFILES_BEFORE_DEEP=$(find "${FIRMWARE_PATH_CP}" -xdev -type f | wc -l )
 
   # if we run into the deep extraction mode we always do at least one extraction round:
-  if [[ "${DISK_SPACE_CRIT}" -eq 0 ]]; then
+  if [[ "${DISK_SPACE_CRIT}" -eq 0 ]] && [[ "${DEEP_EXT_DEPTH:-4}" -gt 0 ]]; then
     print_output "[*] Deep extraction - 1st round"
     print_output "[*] Walking through all files and try to extract what ever possible"
 
@@ -120,7 +126,7 @@ deep_extractor() {
     detect_root_dir_helper "${FIRMWARE_PATH_CP}"
   fi
 
-  if [[ ${RTOS} -eq 1 && "${DISK_SPACE_CRIT}" -eq 0 ]]; then
+  if [[ ${RTOS} -eq 1 && "${DISK_SPACE_CRIT}" -eq 0 && "${DEEP_EXT_DEPTH:-4}" -gt 1 ]]; then
     print_output "[*] Deep extraction - 2nd round"
     print_output "[*] Walking through all files and try to extract what ever possible"
 
@@ -128,7 +134,7 @@ deep_extractor() {
     detect_root_dir_helper "${FIRMWARE_PATH_CP}"
   fi
 
-  if [[ ${RTOS} -eq 1 && "${DISK_SPACE_CRIT}" -eq 0 ]]; then
+  if [[ ${RTOS} -eq 1 && "${DISK_SPACE_CRIT}" -eq 0 && "${DEEP_EXT_DEPTH:-4}" -gt 2 ]]; then
     print_output "[*] Deep extraction - 3rd round"
     print_output "[*] Walking through all files and try to extract what ever possible"
 
@@ -136,7 +142,7 @@ deep_extractor() {
     detect_root_dir_helper "${FIRMWARE_PATH_CP}"
   fi
 
-  if [[ ${RTOS} -eq 1 && "${DISK_SPACE_CRIT}" -eq 0 ]]; then
+  if [[ ${RTOS} -eq 1 && "${DISK_SPACE_CRIT}" -eq 0 && "${DEEP_EXT_DEPTH:-4}" -gt 3 ]]; then
     print_output "[*] Deep extraction - 4th round"
     print_output "[*] Walking through all files and try to extract what ever possible with unblob mode"
     print_output "[*] WARNING: This is the last extraction round that is executed."
@@ -154,6 +160,7 @@ deep_extractor() {
 deeper_extractor_helper() {
   local lFILE_TMP=""
   local lFILE_MD5=""
+  local lFILE_DETAILS=""
   local lBIN_PID=""
   local lWAIT_PIDS_P60=()
   local lFREE_SPACE=""
@@ -161,6 +168,10 @@ deeper_extractor_helper() {
   prepare_file_arr_limited "${FIRMWARE_PATH_CP}"
 
   for lFILE_TMP in "${FILE_ARR_LIMITED[@]}"; do
+    lFILE_DETAILS=$(file -b "${lFILE_TMP}")
+    if [[ "${lFILE_DETAILS}" == *"text"* ]]; then
+      continue
+    fi
 
     lFILE_MD5="$(md5sum "${lFILE_TMP}")"
     # let's check the current md5sum against our array of unique md5sums - if we have a match this is already extracted
@@ -169,7 +180,7 @@ deeper_extractor_helper() {
     [[ "${MD5_DONE_DEEP[*]}" == *"${lFILE_MD5/\ *}"* ]] && continue
 
     print_output "[*] Details of file: ${ORANGE}${lFILE_TMP}${NC}"
-    print_output "$(indent "$(orange "$(file "${lFILE_TMP}")")")"
+    print_output "$(indent "$(orange "${lFILE_DETAILS}")")"
     print_output "$(indent "$(orange "$(md5sum "${lFILE_TMP}")")")"
 
     # do a quick check if EMBA should handle the file or we give it to unblob:

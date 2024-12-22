@@ -20,7 +20,7 @@
 set_defaults() {
   # if this is a release version set RELEASE to 1, add a banner to config/banner and name the banner with the version details
   export RELEASE=1
-  export EMBA_VERSION="1.5.0"
+  export EMBA_VERSION="1.5.1"
 
   export CLEANED=0              # used for the final cleaner function for not running it multiple times
   export STRICT_MODE=0
@@ -29,8 +29,10 @@ set_defaults() {
   export ARCH_CHECK=1
   export RTOS=1                 # Testing RTOS based OS - 1 -> no Linux / 0 -> Linux
   export BINARY_EXTENDED=0
+  export MAX_EXT_CHECK_BINS=20
   export CONTAINER_EXTRACT=0
   export DISABLE_DEEP=0
+  export DEEP_EXT_DEPTH=4
   export FACT_EXTRACTOR=0
   export FIRMWARE=0
   export FORCE=0
@@ -89,7 +91,7 @@ set_defaults() {
   export MINIMUM_GPT_PRIO=1     # everything above this value gets checked
 
   export SHORT_PATH=0           # short paths in cli output
-  export THREADED=0             # 0 -> single thread
+  export THREADED=1             # 0 -> single thread
                                 # 1 -> multi threaded
   export YARA=0                 # default: disable yara tests
   export OVERWRITE_LOG=0        # automaticially overwrite log directory, if necessary
@@ -153,9 +155,35 @@ set_defaults() {
   export QUEST_CONTAINER=""
   export DISABLE_DOTS=0     # set to 1 to disable dotting for showing EMBA is alive
   export CPE_VERSION="2.3"
+
+  # we limit the maximal file log of our SBOM -> change this in the scanning profile
+  export SBOM_MAX_FILE_LOG=200
+  export SBOM_MINIMAL=0
+  export SBOM_UNTRACKED_FILES=1
+
+  # we can enable/disable the s08 submodules with the following array configuration
+  # -> just comment the submodule that should not be used
+  # usually this should be done via a scan-profile
+  export S08_MODULES_ARR=()
+  S08_MODULES_ARR=( "S08_submodule_debian_pkg_mgmt_parser" )
+  S08_MODULES_ARR+=( "S08_submodule_deb_package_parser" )
+  S08_MODULES_ARR+=( "S08_submodule_openwrt_pkg_mgmt_parser" )
+  S08_MODULES_ARR+=( "S08_submodule_rpm_pkg_mgmt_parser" )
+  S08_MODULES_ARR+=( "S08_submodule_rpm_package_parser" )
+  S08_MODULES_ARR+=( "S08_submodule_bsd_package_parser" )
+  S08_MODULES_ARR+=( "S08_submodule_python_pip_package_mgmt_parser" )
+  S08_MODULES_ARR+=( "S08_submodule_python_requirements_parser" )
+  S08_MODULES_ARR+=( "S08_submodule_python_poetry_lock_parser" )
+  S08_MODULES_ARR+=( "S08_submodule_java_archives_parser" )
+  S08_MODULES_ARR+=( "S08_submodule_ruby_gem_archive_parser" )
+  S08_MODULES_ARR+=( "S08_submodule_alpine_apk_package_parser" )
+  S08_MODULES_ARR+=( "S08_submodule_windows_exifparser" )
+  S08_MODULES_ARR+=( "S08_submodule_rust_cargo_lock_parser" )
+  S08_MODULES_ARR+=( "S08_submodule_node_js_package_lock_parser" )
 }
 
 set_log_paths() {
+  export SBOM_LOG_PATH="${LOG_DIR}/SBOM"
   export P02_CSV_LOG="${CSV_DIR}/p02_firmware_bin_file_check.csv"
   export P99_CSV_LOG="${CSV_DIR}/p99_prepare_analyzer.csv"
   export P55_LOG="${LOG_DIR}/p55_unblob_extractor.txt"
@@ -179,11 +207,11 @@ set_log_paths() {
   export S16_LOG="${LOG_DIR}/s16_ghidra_decompile_checks.txt"
   export S17_LOG="${LOG_DIR}/s17_cwe_checker.txt"
   export S17_CSV_LOG="${CSV_DIR}/s17_apk_check.csv"
-  export S24_CSV_LOG="${CSV_DIR}/s24_kernel_bin_identifier.csv"
   export S25_CSV_LOG="${CSV_DIR}/s25_kernel_check.csv"
   export S20_LOG="${LOG_DIR}/s20_shell_check.txt"
   export S21_LOG="${LOG_DIR}/s21_python_check.txt"
   export S22_LOG="${LOG_DIR}/s22_php_check.txt"
+  export S22_CSV_LOG="${CSV_DIR}/s22_php_check.csv"
   export S23_LOG="${LOG_DIR}/s23_lua_check.txt"
   export S23_CSV_LOG="${CSV_DIR}/s23_lua_check.csv"
   export S24_LOG="${LOG_DIR}/s24_kernel_bin_identifier.txt"
@@ -202,6 +230,7 @@ set_log_paths() {
   export S95_LOG="${LOG_DIR}/s95_interesting_files_check.txt"
   export S107_LOG="${LOG_DIR}/s107_deep_password_search.txt"
   export S108_LOG="${LOG_DIR}/s108_stacs_password_search.txt"
+  export S108_CSV_LOG="${CSV_DIR}/s108_stacs_password_search.csv"
   export S109_LOG="${LOG_DIR}/s109_jtr_local_pw_cracking.txt"
   export S110_LOG="${LOG_DIR}/s110_yara_check.txt"
   export S116_CSV_LOG="${CSV_DIR}/s116_qemu_version_detection.csv"
@@ -221,4 +250,5 @@ set_log_paths() {
   export F20_EXPLOITS_LOG="${F20_LOG_DIR}/exploits-overview.txt"
   export F15_LOG="${LOG_DIR}/f15_cyclonedx_sbom.txt"
   export F15_CSV_LOG="${CSV_DIR}/f15_cyclonedx_sbom.csv"
+  export F50_CSV_LOG="${CSV_DIR}/f50_base_aggregator.csv"
 }

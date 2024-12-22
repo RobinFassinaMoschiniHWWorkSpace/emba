@@ -18,7 +18,7 @@
 
 
 emba_parameter_parsing() {
-  while getopts a:bBA:cC:d:De:Ef:Fghik:l:m:N:o:p:P:QrsStT:UVX:yY:WzZ: OPT ; do
+  while getopts a:bBA:cC:d:De:Ef:Fghik:l:m:N:o:p:P:qQrsStT:UVX:yY:WzZ: OPT ; do
     case "${OPT}" in
       a)
         check_alnum "${OPTARG}"
@@ -148,6 +148,9 @@ emba_parameter_parsing() {
         export MAX_MODS=""
         MAX_MODS="$(escape_echo "${OPTARG}")"
         ;;
+      q)
+        export DISABLE_DEEP=1
+        ;;
       Q)
         export FULL_EMULATION=1
         ;;
@@ -161,9 +164,9 @@ emba_parameter_parsing() {
       S)
         export STRICT_MODE=1
         ;;
-      t)
-        export THREADED=1
-        ;;
+#      t)
+#        export THREADED=1
+#        ;;
       T)
         check_int "${OPTARG}"
         export MAX_MOD_THREADS=""

@@ -34,7 +34,7 @@ P02_firmware_bin_file_check() {
     export FIRMWARE_PATH="${LOG_DIR}"/firmware/
   fi
 
-  if [[ -f "${FIRMWARE_PATH}" ]]; then
+  if [[ -f "${FIRMWARE_PATH}" ]] && [[ "${SBOM_MINIMAL:-0}" -ne 1 ]]; then
     get_fw_file_details "${FIRMWARE_PATH}"
     generate_entropy_graph "${FIRMWARE_PATH}"
   fi
@@ -46,8 +46,10 @@ P02_firmware_bin_file_check() {
   print_output "[*] Details of the firmware file:"
   print_output "$(indent "${lFILE_LS_OUT}")"
   if [[ -f "${FIRMWARE_PATH}" ]]; then
-    print_fw_file_details "${FIRMWARE_PATH}"
-    generate_pixde "${FIRMWARE_PATH}"
+    if [[ "${SBOM_MINIMAL:-0}" -ne 1 ]]; then
+      print_fw_file_details "${FIRMWARE_PATH}"
+      generate_pixde "${FIRMWARE_PATH}"
+    fi
     fw_bin_detector "${FIRMWARE_PATH}"
     backup_p02_vars
   fi
@@ -103,7 +105,6 @@ set_p02_default_exports() {
   export SHA1_CHECKSUM="NA"
   export MD5_CHECKSUM="NA"
   export ENTROPY="NA"
-  export PATOOLS_INIT=0
   export DLINK_ENC_DETECTED=0
   export VMDK_DETECTED=0
   export UBOOT_IMAGE=0
@@ -131,26 +132,22 @@ set_p02_default_exports() {
 
 generate_entropy_graph() {
   local lFIRMWARE_PATH_BIN="${1:-}"
+  local lENTROPY_PIC_PATH="${LOG_DIR}/firmware_entropy.png"
 
   # we use the original FIRMWARE_PATH for entropy testing, just if it is a file
-  if [[ -f "${lFIRMWARE_PATH_BIN}" ]] && ! [[ -f "${LOG_DIR}"/firmware_entropy.png ]]; then
+  if [[ -f "${lFIRMWARE_PATH_BIN}" ]] && ! [[ -f "${lENTROPY_PIC_PATH}" ]]; then
     print_output "[*] Entropy testing with binwalk ... "
-    # we have to change the working directory for binwalk, because everything except the log directory is read-only in
-    # Docker container and binwalk fails to save the entropy picture there
-    if [[ ${IN_DOCKER} -eq 1 ]] ; then
-      cd "${LOG_DIR}" || return
-      print_output "$("${BINWALK_BIN[@]}" -E -F -J "${lFIRMWARE_PATH_BIN}")"
-      mv "$(basename "${lFIRMWARE_PATH_BIN}".png)" "${LOG_DIR}"/firmware_entropy.png 2> /dev/null || true
-      cd /emba || return
-    else
-      print_output "$("${BINWALK_BIN[@]}" -E -F -J "${lFIRMWARE_PATH_BIN}")"
-      mv "$(basename "${lFIRMWARE_PATH_BIN}".png)" "${LOG_DIR}"/firmware_entropy.png 2> /dev/null || true
+    print_output "$("${BINWALK_BIN[@]}" -E -p "${lENTROPY_PIC_PATH}" "${lFIRMWARE_PATH_BIN}")"
+    if [[ -s "${lENTROPY_PIC_PATH}" ]]; then
+      write_link "${lENTROPY_PIC_PATH}"
     fi
   fi
 }
 
 fw_bin_detector() {
   local lCHECK_FILE="${1:-}"
+  local lCHECK_FILE_NAME=""
+  lCHECK_FILE_NAME="$(basename "${lCHECK_FILE}")"
   local lFILE_BIN_OUT=""
   local lHEX_FIRST_LINE=""
   local lQNAP_ENC_CHECK=""
@@ -163,24 +160,29 @@ fw_bin_detector() {
 
   set_p02_default_exports
 
+  strings "${lCHECK_FILE}" > "${LOG_PATH_MODULE}/strings_${lCHECK_FILE_NAME}.txt" &
+  local lTMP_PID="$!"
   lFILE_BIN_OUT=$(file "${lCHECK_FILE}")
   lHEX_FIRST_LINE=$(hexdump -C "${lCHECK_FILE}" | head -1 || true)
-  lAVM_CHECK=$(strings "${lCHECK_FILE}" | grep -c "AVM GmbH .*. All rights reserved.\|(C) Copyright .* AVM" || true)
-  lBMC_CHECK=$(strings "${lCHECK_FILE}" | grep -c "libipmi.so" || true)
-  lDJI_PRAK_ENC_CHECK=$(strings "${lCHECK_FILE}" | grep -c "PRAK\|RREK\|IAEK\|PUEK" || true)
-  lDJI_XV4_ENC_CHECK=$(grep -boUaP "\x78\x56\x34" "${lCHECK_FILE}" | grep -c "^0:"|| true)
-  # we are running binwalk on the file to analyze the output afterwards:
-  "${BINWALK_BIN[@]}" "${lCHECK_FILE}" > "${TMP_DIR}"/p02_binwalk_output.txt
-  if [[ -f "${TMP_DIR}"/p02_binwalk_output.txt ]]; then
-    lQNAP_ENC_CHECK=$(grep -a -i "qnap encrypted" "${TMP_DIR}"/p02_binwalk_output.txt || true)
-  else
-    lQNAP_ENC_CHECK=$("${BINWALK_BIN[@]}" -y "qnap encrypted" "${lCHECK_FILE}")
-  fi
+  wait_for_pid "${lTMP_PID}"
+  lAVM_CHECK=$(grep -c "AVM GmbH .*. All rights reserved.\|(C) Copyright .* AVM" "${LOG_PATH_MODULE}/strings_${lCHECK_FILE_NAME}.txt" || true)
+  lBMC_CHECK=$(grep -c "libipmi.so" "${LOG_PATH_MODULE}/strings_${lCHECK_FILE_NAME}.txt" || true)
+  if [[ "${SBOM_MINIMAL:-0}" -ne 1 ]]; then
+    lDJI_PRAK_ENC_CHECK=$(grep -c "PRAK\|RREK\|IAEK\|PUEK" "${LOG_PATH_MODULE}/strings_${lCHECK_FILE_NAME}.txt" || true)
+    lDJI_XV4_ENC_CHECK=$(grep -boUaP "\x78\x56\x34" "${lCHECK_FILE}" | grep -c "^0:"|| true)
+    # we are running binwalk on the file to analyze the output afterwards:
+    "${BINWALK_BIN[@]}" "${lCHECK_FILE}" > "${LOG_PATH_MODULE}"/p02_binwalk_output.txt
+    if [[ -f "${LOG_PATH_MODULE}"/p02_binwalk_output.txt ]]; then
+      lQNAP_ENC_CHECK=$(grep -a -i "qnap encrypted" "${LOG_PATH_MODULE}"/p02_binwalk_output.txt || true)
+    else
+      lQNAP_ENC_CHECK=$("${BINWALK_BIN[@]}" -y "qnap encrypted" "${lCHECK_FILE}")
+    fi
 
-  # the following check is very weak. It should be only an indicator if the firmware could be a UEFI/BIOS firmware
-  # further checks will follow in P35
-  lUEFI_CHECK=$(grep -c "UEFI\|BIOS" "${TMP_DIR}"/p02_binwalk_output.txt || true)
-  lUEFI_CHECK=$(( "${lUEFI_CHECK}" + "$(grep -c "UEFI\|BIOS" "${lCHECK_FILE}" || true)" ))
+    # the following check is very weak. It should be only an indicator if the firmware could be a UEFI/BIOS firmware
+    # further checks will follow in P35
+    lUEFI_CHECK=$(grep -c "UEFI\|BIOS" "${LOG_PATH_MODULE}"/p02_binwalk_output.txt || true)
+    lUEFI_CHECK=$(( "${lUEFI_CHECK}" + "$(grep -c "UEFI\|BIOS" "${LOG_PATH_MODULE}/strings_${lCHECK_FILE_NAME}.txt" || true)" ))
+  fi
 
   if [[ -f "${KERNEL_CONFIG}" ]] && [[ "${KERNEL}" -eq 1 ]]; then
     # we set the FIRMWARE_PATH to the kernel config path if we have only -k parameter
@@ -220,16 +222,14 @@ fw_bin_detector() {
     export AVM_DETECTED=1
     write_csv_log "AVM firmware detected" "yes" "NA"
   fi
-  # if we have a zip, tgz, tar archive we are going to use the patools extractor
   if [[ "${lFILE_BIN_OUT}" == *"gzip compressed data"* || "${lFILE_BIN_OUT}" == *"Zip archive data"* || \
     "${lFILE_BIN_OUT}" == *"POSIX tar archive"* || "${lFILE_BIN_OUT}" == *"ISO 9660 CD-ROM filesystem data"* || \
     "${lFILE_BIN_OUT}" == *"7-zip archive data"* || "${lFILE_BIN_OUT}" == *"XZ compressed data"* || \
     "${lFILE_BIN_OUT}" == *"bzip2 compressed data"* ]]; then
     # as the AVM images are also zip files we need to bypass it here:
     if [[ "${AVM_DETECTED}" -ne 1 ]]; then
-      print_output "[+] Identified gzip/zip/tar/iso/xz/bzip2 archive file - using patools extraction module"
-      export PATOOLS_INIT=1
-      write_csv_log "basic compressed (patool)" "yes" "NA"
+      print_output "[+] Identified gzip/zip/tar/iso/xz/bzip2 archive file"
+      write_csv_log "basic compressed" "yes" "NA"
     fi
   fi
   if [[ "${lFILE_BIN_OUT}" == *"QEMU QCOW2 Image"* ]] || [[ "${lFILE_BIN_OUT}" == *"QEMU QCOW Image"* ]]; then
@@ -320,43 +320,44 @@ fw_bin_detector() {
   if [[ "${lFILE_BIN_OUT}" == *"Perl script text executable"* ]]; then
     print_output "[+] Identified Perl script - performing perl checks"
     export DISABLE_DEEP=1
-    if ! [[ -f "${LOG_DIR}/firmware/$(basename "${lCHECK_FILE}").pl" ]]; then
-      cp "${lCHECK_FILE}" "${LOG_DIR}/firmware/$(basename "${lCHECK_FILE}").pl" || print_error "[-] Perl script file copy process failed"
+    if ! [[ -f "${LOG_DIR}/firmware/${lCHECK_FILE_NAME}.pl" ]]; then
+      cp "${lCHECK_FILE}" "${LOG_DIR}/firmware/${lCHECK_FILE_NAME}.pl" || print_error "[-] Perl script file copy process failed"
     fi
   fi
   if [[ "${lFILE_BIN_OUT}" == *"PHP script,"* ]]; then
     print_output "[+] Identified PHP script - performing PHP checks"
     export DISABLE_DEEP=1
-    if ! [[ -f "${LOG_DIR}/firmware/$(basename "${lCHECK_FILE}").php" ]]; then
-      cp "${lCHECK_FILE}" "${LOG_DIR}/firmware/$(basename "${lCHECK_FILE}").php" || print_error "[-] PHP script file copy process failed"
+    if ! [[ -f "${LOG_DIR}/firmware/${lCHECK_FILE_NAME}.php" ]]; then
+      cp "${lCHECK_FILE}" "${LOG_DIR}/firmware/${lCHECK_FILE_NAME}.php" || print_error "[-] PHP script file copy process failed"
     fi
   fi
   if [[ "${lFILE_BIN_OUT}" == *"Python script,"* ]]; then
     print_output "[+] Identified Python script - performing Python checks"
     export DISABLE_DEEP=1
-    if ! [[ -f "${LOG_DIR}/firmware/$(basename "${lCHECK_FILE}").py" ]]; then
-      cp "${lCHECK_FILE}" "${LOG_DIR}/firmware/$(basename "${lCHECK_FILE}").py" || print_error "[-] Python script file copy process failed"
+    if ! [[ -f "${LOG_DIR}/firmware/${lCHECK_FILE_NAME}.py" ]]; then
+      cp "${lCHECK_FILE}" "${LOG_DIR}/firmware/${lCHECK_FILE_NAME}.py" || print_error "[-] Python script file copy process failed"
     fi
   fi
   if [[ "${lFILE_BIN_OUT}" == *"shell script,"* ]]; then
     print_output "[+] Identified shell script - performing shell checks"
     export DISABLE_DEEP=1
-    if ! [[ -f "${LOG_DIR}/firmware/$(basename "${lCHECK_FILE}").sh" ]]; then
-      cp "${lCHECK_FILE}" "${LOG_DIR}/firmware/$(basename "${lCHECK_FILE}").sh" || print_error "[-] Shell script file copy process failed"
+    if ! [[ -f "${LOG_DIR}/firmware/${lCHECK_FILE_NAME}.sh" ]]; then
+      cp "${lCHECK_FILE}" "${LOG_DIR}/firmware/${lCHECK_FILE_NAME}.sh" || print_error "[-] Shell script file copy process failed"
     fi
   fi
   if [[ "${lFILE_BIN_OUT}" == *"Android package (APK),"* ]]; then
     print_output "[+] Identified Android APK package - performing APK checks"
-    if ! [[ -f "${LOG_DIR}/firmware/$(basename "${lCHECK_FILE}").apk" ]]; then
-      cp "${lCHECK_FILE}" "${LOG_DIR}/firmware/$(basename "${lCHECK_FILE}").apk" || print_error "[-] APK file copy process failed"
+    if ! [[ -f "${LOG_DIR}/firmware/${lCHECK_FILE_NAME}.apk" ]]; then
+      cp "${lCHECK_FILE}" "${LOG_DIR}/firmware/${lCHECK_FILE_NAME}.apk" || print_error "[-] APK file copy process failed"
+      export DISABLE_DEEP=1
     fi
   fi
   if [[ "${lFILE_BIN_OUT}" == *"PE32 executable"* ]] || [[ "${lFILE_BIN_OUT}" == *"PE32+ executable"* ]] || [[ "${lFILE_BIN_OUT}" == *"MSI Installer"* ]]; then
     print_output "[+] Identified Windows executable"
     export DISABLE_DEEP=1
     export WINDOWS_EXE=1
-    if ! [[ -f "${LOG_DIR}/firmware/$(basename "${lCHECK_FILE}").exe" ]]; then
-      cp "${lCHECK_FILE}" "${LOG_DIR}/firmware/$(basename "${lCHECK_FILE}").exe" || print_error "[-] Windows executable copy process failed"
+    if ! [[ -f "${LOG_DIR}/firmware/${lCHECK_FILE_NAME}.exe" ]]; then
+      cp "${lCHECK_FILE}" "${LOG_DIR}/firmware/${lCHECK_FILE_NAME}.exe" || print_error "[-] Windows executable copy process failed"
     fi
   fi
   # probably we need to take a deeper look to identify the gpg compressed firmware files better.
@@ -388,7 +389,7 @@ fw_bin_detector() {
     export BUFFALO_ENC_DETECTED=1
     write_csv_log "Buffalo encrypted" "yes" "NA"
   fi
-  if [[ "$(basename "${lCHECK_FILE}")" =~ .*\.ri ]] && [[ "${lFILE_BIN_OUT}" == *"data"* ]]; then
+  if [[ "${lCHECK_FILE_NAME}" =~ .*\.ri ]] && [[ "${lFILE_BIN_OUT}" == *"data"* ]]; then
     # ri files are usually used by zyxel
     if [[ $(find "${LOG_DIR}"/firmware -name "$(basename -s .ri "${lCHECK_FILE}")".bin | wc -l) -gt 0 ]]; then
       # if we find a bin file with the same name then it is a Zyxel firmware image
@@ -401,7 +402,7 @@ fw_bin_detector() {
   if [[ "${lUEFI_CHECK}" -gt 0 ]]; then
     print_output "[+] Identified possible UEFI/BIOS firmware - using UEFI extraction module"
     UEFI_DETECTED=1
-    UEFI_AMI_CAPSULE=$(grep -c "AMI.*EFI.*capsule" "${TMP_DIR}"/p02_binwalk_output.txt || true)
+    UEFI_AMI_CAPSULE=$(grep -c "AMI.*EFI.*capsule" "${LOG_PATH_MODULE}"/p02_binwalk_output.txt || true)
     if [[ "${UEFI_AMI_CAPSULE}" -gt 0 ]]; then
       print_output "[+] Identified possible UEFI-AMI capsule firmware - using capsule extractors"
     fi
@@ -415,7 +416,6 @@ backup_p02_vars() {
   backup_var "FIRMWARE_PATH" "${FIRMWARE_PATH}"
   backup_var "UEFI_DETECTED" "${UEFI_DETECTED}"
   backup_var "AVM_DETECTED" "${AVM_DETECTED}"
-  backup_var "PATOOLS_INIT" "${PATOOLS_INIT}"
   backup_var "VMDK_DETECTED" "${VMDK_DETECTED}"
   backup_var "UBI_IMAGE" "${UBI_IMAGE}"
   backup_var "DLINK_ENC_DETECTED" "${DLINK_ENC_DETECTED}"
