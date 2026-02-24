@@ -53,6 +53,7 @@ IL10_system_emulator() {
     # EMBAbite
     print_tool_info "netcat-openbsd" 1
     print_tool_info "tnftp" 1
+    print_tool_info "sshpass" 1
 
     # Busybox version (1.29.3 / 1.36.1)
     BB_VER="1.36.1"

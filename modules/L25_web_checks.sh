@@ -328,6 +328,9 @@ web_access_crawler() {
   else
     lPROTO="http"
   fi
+  # we count our failed system restarts on this service
+  # if we fail more than 10 times we skip further tests
+  local lONLINE_CHECK_FAILED=0
 
   sub_module_title "Starting web server crawling for ${ORANGE}${lIP_}:${lPORT_}${NC}"
   print_ln
@@ -434,6 +437,14 @@ web_access_crawler() {
       fi
 
       if ! system_online_check "${lIP_}" "${lPORT_}"; then
+        lONLINE_CHECK_FAILED=$((lONLINE_CHECK_FAILED+1))
+        if [[ "${lONLINE_CHECK_FAILED}" -gt 10 ]]; then
+          # we reset the current restarting counter to further process the other services
+          rm "${TMP_DIR}/emulation_restarting.log" || true
+          cd "${lHOME_}" || exit 1
+          break 2
+        fi
+
         if ! restart_emulation "${lIP_}" "${IMAGE_NAME}" 0 "${STATE_CHECK_MECHANISM}" 1; then
           print_output "[-] System not responding - Not performing web crawling"
           enable_strict_mode "${STRICT_MODE}" 0

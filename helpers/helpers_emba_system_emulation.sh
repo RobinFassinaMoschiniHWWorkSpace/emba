@@ -204,13 +204,6 @@ service_online_check() {
   local lNMAP_SERV_TCP_ARR=()
   local lSERVICE=""
 
-  # we log how often we restart the system
-  # if we are running into restarting the service more then MAX_SYSTEM_RESTART_CNT we return 1
-  if [[ $(wc -l 2>/dev/null < "${TMP_DIR}/emulation_restarting.log") -gt "${MAX_SYSTEM_RESTART_CNT}" ]]; then
-    print_output "[!] WARNING: Maximal restart counter reached ... no further service checks and system restarts performed"
-    return 1
-  fi
-
   # if we are called without a network service we extract our services and use them
   # otherwise we are only checking for the service provided by the caller
   if [[ "${lNW_SERVICE}" == "NA" ]]; then
@@ -239,7 +232,6 @@ service_online_check() {
     done
   else
     [[ "${lPRINT_OUTPUT}" -eq 1 ]] && print_output "[*] No network services detected for recovery ..." "no_log"
-    return 1
   fi
   return 1
 }
