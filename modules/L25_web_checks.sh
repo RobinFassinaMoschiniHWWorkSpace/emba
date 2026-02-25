@@ -70,6 +70,8 @@ main_web_check() {
 
       # handle first https and afterwards http
       if [[ "${lSERVICE}" == *"ssl|http"* ]] || [[ "${lSERVICE}" == *"ssl/http"* ]];then
+        # enable old cyphers
+        sed -i -E 's/MinProtocol[=\ ]+.*/MinProtocol = None/g' /etc/ssl/openssl.cnf
         lSSL=1
         if system_online_check "${lIP_ADDRESS_}" "${lPORT}"; then
           # we make a screenshot for every web server
@@ -279,12 +281,12 @@ check_curl_ret() {
 
   if [[ "${lCURL_RET_CODE}" -eq 200 ]]; then
     if [[ "${HTTP_RAND_REF_SIZE}" == "NA" ]] || [[ "${lCURL_RET_SIZE}" != "${HTTP_RAND_REF_SIZE}" ]]; then
-      print_output "${lCURL_RET_CODE} OK:${lCURL_RET_SIZE}" "${LOG_PATH_MODULE}/crawling_${lIP_}-${lPORT}.log"
+      write_log "${lCURL_RET_CODE} OK:${lCURL_RET_SIZE}" "${LOG_PATH_MODULE}/crawling_${lIP_}-${lPORT}.log"
     fi
   elif [[ "${lCURL_RET_CODE}" == "401" ]] && [[ "${lCURL_RET_SIZE}" != "${HTTP_RAND_REF_SIZE}" ]]; then
-    print_output "${lCURL_RET_CODE} Unauth:${lCURL_RET_SIZE}" "${LOG_PATH_MODULE}/crawling_${lIP_}-${lPORT}.log"
+    write_log "${lCURL_RET_CODE} Unauth:${lCURL_RET_SIZE}" "${LOG_PATH_MODULE}/crawling_${lIP_}-${lPORT}.log"
   else
-    print_output "${lCURL_RET_CODE}:${lCURL_RET_SIZE}" "${LOG_PATH_MODULE}/crawling_${lIP_}-${lPORT}.log"
+    write_log "${lCURL_RET_CODE}:${lCURL_RET_SIZE}" "${LOG_PATH_MODULE}/crawling_${lIP_}-${lPORT}.log"
   fi
 }
 
@@ -397,7 +399,7 @@ web_access_crawler() {
       ! [[ "${lWEB_FILE}" =~ ^[a-zA-Z0-9./_~'-']+$ ]] && continue
 
       if [[ -n "${lWEB_FILE}" ]] && ! [[ "${lCRAWLED_ARR[*]}" == *" ${lWEB_FILE} "* ]]; then
-        print_output "[*] Testing ${ORANGE}${lREQUEST_URL}/${lWEB_FILE}${NC}" "${LOG_PATH_MODULE}/crawling_${lIP_}-${lPORT_}.log"
+        write_log "[*] Testing ${ORANGE}${lREQUEST_URL}/${lWEB_FILE}${NC}" "${LOG_PATH_MODULE}/crawling_${lIP_}-${lPORT_}.log"
         lCURL_RET="$(timeout --preserve-status --signal SIGINT 2 curl "${lCURL_OPTS_ARR[@]}" "${lREQUEST_URL}/${lWEB_FILE}" -o /dev/null -w '%{http_code}:%{size_download}')"
         check_curl_ret "${lIP_}" "${lPORT_}" "${lCURL_RET}"
         lCRAWLED_ARR+=( "${lWEB_FILE}" )
@@ -407,7 +409,7 @@ web_access_crawler() {
       lWEB_DIR_L1="${lWEB_DIR_L1#\.}"
       lWEB_DIR_L1="${lWEB_DIR_L1#\/}"
       if [[ -n "${lWEB_DIR_L1}" ]] && ! [[ "${lCRAWLED_ARR[*]}" == *" ${lWEB_DIR_L1}/${lWEB_FILE} "* ]]; then
-        print_output "[*] Testing ${ORANGE}${lREQUEST_URL}/${lWEB_DIR_L1}/${lWEB_FILE}${NC}" "${LOG_PATH_MODULE}/crawling_${lIP_}-${lPORT_}.log"
+        write_log "[*] Testing ${ORANGE}${lREQUEST_URL}/${lWEB_DIR_L1}/${lWEB_FILE}${NC}" "${LOG_PATH_MODULE}/crawling_${lIP_}-${lPORT_}.log"
         lCURL_RET="$(timeout --preserve-status --signal SIGINT 2 curl "${lCURL_OPTS_ARR[@]}" "${lREQUEST_URL}/${lWEB_DIR_L1}/${lWEB_FILE}" -o /dev/null -w '%{http_code}:%{size_download}')"
         check_curl_ret "${lIP_}" "${lPORT_}" "${lCURL_RET}"
         lCRAWLED_ARR+=( "${lWEB_DIR_L1}/${lWEB_FILE}" )
@@ -418,7 +420,7 @@ web_access_crawler() {
       lWEB_DIR_L2="${lWEB_DIR_L2#\/}"
       if [[ -n "${lWEB_DIR_L2}" ]] && [[ "${lWEB_DIR_L2}" != "${lWEB_DIR_L1}" ]] && \
         ! [[ "${lCRAWLED_ARR[*]}" == *" ${lWEB_DIR_L2}/${lWEB_FILE} "* ]]; then
-        print_output "[*] Testing ${ORANGE}${lREQUEST_URL}/${lWEB_DIR_L2}/${lWEB_FILE}${NC}" "${LOG_PATH_MODULE}/crawling_${lIP_}-${lPORT_}.log"
+        write_log "[*] Testing ${ORANGE}${lREQUEST_URL}/${lWEB_DIR_L2}/${lWEB_FILE}${NC}" "${LOG_PATH_MODULE}/crawling_${lIP_}-${lPORT_}.log"
         lCURL_RET="$(timeout --preserve-status --signal SIGINT 2 curl "${lCURL_OPTS_ARR[@]}" "${lREQUEST_URL}/${lWEB_DIR_L2}/${lWEB_FILE}" -o /dev/null -w '%{http_code}:%{size_download}')"
         check_curl_ret "${lIP_}" "${lPORT_}" "${lCURL_RET}"
         lCRAWLED_ARR+=( "${lWEB_DIR_L2}/${lWEB_FILE}" )
@@ -429,7 +431,7 @@ web_access_crawler() {
       lWEB_DIR_L3="${lWEB_DIR_L3#\/}"
       if [[ -n "${lWEB_DIR_L3}" ]] && [[ "${lWEB_DIR_L3}" != "${lWEB_DIR_L2}" ]] && \
         [[ "${lWEB_DIR_L3}" != "${lWEB_DIR_L1}" ]] && ! [[ "${lCRAWLED_ARR[*]}" == *" ${lWEB_DIR_L3}/${lWEB_FILE} "* ]]; then
-        print_output "[*] Testing ${ORANGE}${lREQUEST_URL}/${lWEB_DIR_L3}/${lWEB_FILE}${NC}" "${LOG_PATH_MODULE}/crawling_${lIP_}-${lPORT_}.log"
+        write_log "[*] Testing ${ORANGE}${lREQUEST_URL}/${lWEB_DIR_L3}/${lWEB_FILE}${NC}" "${LOG_PATH_MODULE}/crawling_${lIP_}-${lPORT_}.log"
         lCURL_RET="$(timeout --preserve-status --signal SIGINT 2 curl "${lCURL_OPTS_ARR[@]}" "${lREQUEST_URL}/${lWEB_DIR_L3}/${lWEB_FILE}" -o /dev/null -w '%{http_code}:%{size_download}')"
         check_curl_ret "${lIP_}" "${lPORT_}" "${lCURL_RET}"
 
@@ -477,7 +479,7 @@ web_access_crawler() {
         mapfile -t lPOSSIBLE_FILES_ARR < <(strings "${lFILE_QEMU_START}" | grep -o -E '[-_a-zA-Z0-9]+\.[a-zA-Z0-9]{3}$' | sort -u || true)
         # crawl all the files:
         for lFILE_QEMU_TEST in "${lPOSSIBLE_FILES_ARR[@]}"; do
-          print_output "[*] Testing ${ORANGE}${lREQUEST_URL}/${lFILE_QEMU_TEST}${NC}" "${LOG_PATH_MODULE}/crawling_${lIP_}-${lPORT_}.log"
+          write_log "[*] Testing ${ORANGE}${lREQUEST_URL}/${lFILE_QEMU_TEST}${NC}" "${LOG_PATH_MODULE}/crawling_${lIP_}-${lPORT_}.log"
           lCURL_RET="$(timeout --preserve-status --signal SIGINT 2 curl "${lCURL_OPTS_ARR[@]}" "${lREQUEST_URL}/${lFILE_QEMU_TEST}" -o /dev/null -w '%{http_code}:%{size_download}' || true)"
           check_curl_ret "${lIP_}" "${lPORT_}" "${lCURL_RET}"
         done
