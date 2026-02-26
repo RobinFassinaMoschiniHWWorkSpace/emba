@@ -255,7 +255,7 @@ function_check_NIOS2() {
     fi
 
     if [[ "${COUNT_FUNC}" -eq 0 ]]; then
-      [[ -f "${FUNC_LOG}" ]] && rm "${FUNC_LOG}"
+      [[ -f "${FUNC_LOG:-}" ]] && rm "${FUNC_LOG:-}"
       continue
     fi
   done
@@ -319,7 +319,7 @@ function_check_PPC32() {
     fi
 
     if [[ "${COUNT_FUNC}" -eq 0 ]]; then
-      [[ -f "${FUNC_LOG}" ]] && rm "${FUNC_LOG}"
+      [[ -f "${FUNC_LOG:-}" ]] && rm "${FUNC_LOG:-}"
       continue
     fi
   done
@@ -396,7 +396,7 @@ function_check_MIPS() {
     fi
 
     if [[ "${COUNT_FUNC}" -eq 0 ]]; then
-      [[ -f "${FUNC_LOG}" ]] && rm "${FUNC_LOG}"
+      [[ -f "${FUNC_LOG:-}" ]] && rm "${FUNC_LOG:-}"
       continue
     fi
   done
@@ -461,7 +461,7 @@ function_check_ARM64() {
     fi
 
     if [[ "${COUNT_FUNC}" -eq 0 ]]; then
-      [[ -f "${FUNC_LOG}" ]] && rm "${FUNC_LOG}"
+      [[ -f "${FUNC_LOG:-}" ]] && rm "${FUNC_LOG:-}"
       continue
     fi
   done
@@ -525,7 +525,7 @@ function_check_ARM32() {
     fi
 
     if [[ "${COUNT_FUNC}" -eq 0 ]]; then
-      [[ -f "${FUNC_LOG}" ]] && rm "${FUNC_LOG}"
+      [[ -f "${FUNC_LOG:-}" ]] && rm "${FUNC_LOG:-}"
       continue
     fi
   done
@@ -563,7 +563,7 @@ function_check_x86() {
 
     if ( readelf "${lREADELF_PARAM_ARR[@]}" "${lBINARY_}" | awk '{print $5}' | grep -E -q "^${lFUNCTION}" 2>/dev/null ) ; then
       NETWORKING=$(readelf "${lREADELF_PARAM_ARR[@]}" "${lBINARY_}" 2>/dev/null | grep -E "FUNC[[:space:]]+UND" | grep -c "\ bind\|\ socket\|\ accept\|\ recvfrom\|\ listen" 2> /dev/null || true)
-      export FUNC_LOG="${LOG_PATH_MODULE}""/vul_func_""${lFUNCTION}""-""${lBIN_NAME}"".txt"
+      export FUNC_LOG="${LOG_PATH_MODULE}/vul_func_${lFUNCTION}-${lBIN_NAME}"".txt"
       log_bin_hardening "${lBINARY_}" "${FUNC_LOG}"
       log_func_header "${lBIN_NAME}" "${lFUNCTION}" "${FUNC_LOG}"
       if [[ "${lFUNCTION}" == "mmap" ]] ; then
@@ -589,7 +589,7 @@ function_check_x86() {
     fi
 
     if [[ "${COUNT_FUNC}" -eq 0 ]]; then
-      [[ -f "${FUNC_LOG}" ]] && rm "${FUNC_LOG}"
+      [[ -f "${FUNC_LOG:-}" ]] && rm "${FUNC_LOG:-}"
       continue
     fi
   done
@@ -653,7 +653,7 @@ function_check_x86_64() {
     fi
 
     if [[ "${COUNT_FUNC}" -eq 0 ]]; then
-      [[ -f "${FUNC_LOG}" ]] && rm "${FUNC_LOG}"
+      [[ -f "${FUNC_LOG:-}" ]] && rm "${FUNC_LOG:-}"
       continue
     fi
   done
